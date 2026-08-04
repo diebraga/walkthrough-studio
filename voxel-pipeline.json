@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "tasks": [
+    {
+      "id": "0",
+      "type": "Read",
+      "config": {
+        "inputs": [
+          "public/splat_hall_2.ply"
+        ],
+        "output": "cache0",
+        "maxShDegree": 3
+      }
+    },
+    {
+      "id": "1",
+      "type": "Voxel",
+      "config": {
+        "input": "cache0",
+        "output": "public/voxel-hall-2",
+        "voxelResolution": 0.5,
+        "opacityCutoff": 0.1,
+        "backend": "cpu",
+        "box": {
+          "minCorner": [
+            -86,
+            -43,
+            -44
+          ],
+          "maxCorner": [
+            60,
+            48,
+            66
+          ]
+        }
+      }
+    }
+  ]
+}
