@@ -29,11 +29,21 @@ const SPLAT_URL = new URLSearchParams(location.search).get("splat") || "/splat_h
 const VOXEL_META_URL = "/voxel-hall-2/voxel-meta.json";
 const VOXEL_BIN_URL = "/voxel-hall-2/voxel.bin";
 
-// Aholo OSS open-source demo asset (robot.glb) — see the walk-demo example
-// this was ported from. External fetch, not bundled.
+// Aholo OSS open-source demo assets — see the walk-demo example these were
+// ported from (https://aholojs.dev/en-US/playground/?example=walk-demo).
+// External fetch, not bundled. Same "misc/" export pipeline as the robot
+// (Mixamo-rigged, per the "mixamo.com" clip fallback in setupActions below),
+// so it shares the robot's scale/upright constants below.
 const ROBOT_MODEL_URL = "https://holo-cos.aholo3d.cn/aholo-opensource/gs_file/misc/robot.0765006a.glb";
+const MAN_MODEL_URL = "https://holo-cos.aholo3d.cn/aholo-opensource/gs_file/misc/man-final.755ce8ea.glb";
 const THIRD_PERSON_DISTANCE = 3.2;
 const THIRD_PERSON_HEIGHT = 0.35;
+
+type ThirdPersonCharacterId = "robot" | "man";
+const THIRD_PERSON_CHARACTERS: Record<ThirdPersonCharacterId, { label: string; url: string }> = {
+  robot: { label: "Robot", url: ROBOT_MODEL_URL },
+  man: { label: "Man", url: MAN_MODEL_URL },
+};
 
 type PresetId = "balanced" | "performance" | "quality" | "extreme";
 type Vec3Tuple = [number, number, number];
@@ -374,7 +384,7 @@ function createPanel() {
       <button type="button" data-paste>Paste State</button>
     </div>
     <div class="viewer-row">
-      <label><input type="checkbox" data-third-person /> Third person (robot)</label>
+      <label>Character <select data-character></select></label>
     </div>
     <pre data-status>Loading...</pre>
   `;
@@ -386,6 +396,13 @@ function createPanel() {
   }
   preset.value = "performance";
 
+  const character = panel.querySelector<HTMLSelectElement>("[data-character]")!;
+  character.add(new Option("First person", "off"));
+  for (const [id, value] of Object.entries(THIRD_PERSON_CHARACTERS)) {
+    character.add(new Option(`Third person: ${value.label}`, id));
+  }
+  character.value = "off";
+
   return {
     panel,
     preset,
@@ -393,7 +410,7 @@ function createPanel() {
     copy: panel.querySelector<HTMLButtonElement>("[data-copy]")!,
     paste: panel.querySelector<HTMLButtonElement>("[data-paste]")!,
     status: panel.querySelector<HTMLPreElement>("[data-status]")!,
-    thirdPerson: panel.querySelector<HTMLInputElement>("[data-third-person]")!,
+    character,
   };
 }
 
@@ -439,8 +456,54 @@ function applyBaseStyles() {
     }
     .viewer-panel button { padding: 0 10px; cursor: pointer; }
     .viewer-panel pre { margin: 0; white-space: pre-wrap; color: #c7ffdc; }
+    .viewer-instructions {
+      position: fixed;
+      top: 12px;
+      left: 12px;
+      z-index: 10;
+      display: grid;
+      gap: 6px;
+      padding: 10px 14px;
+      border: 1px solid rgba(255,255,255,0.16);
+      border-radius: 8px;
+      background: rgba(4, 7, 10, 0.78);
+      color: #e7f6ef;
+      font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+      backdrop-filter: blur(12px);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.15s ease;
+    }
+    .viewer-instructions.visible { opacity: 1; }
+    .viewer-instructions .row { display: flex; gap: 8px; align-items: center; }
+    .viewer-instructions kbd {
+      display: inline-block;
+      min-width: 16px;
+      padding: 1px 5px;
+      text-align: center;
+      border: 1px solid rgba(255,255,255,0.28);
+      border-radius: 4px;
+      background: rgba(255,255,255,0.08);
+      font: inherit;
+    }
   `;
   document.head.append(style);
+}
+
+/** Control legend shown while the pointer is over the canvas — same keys CameraControl (WASD/QE/RF/wheel/drag) and the jump/reset UI actually respond to. */
+function createInstructionsOverlay() {
+  const el = document.createElement("section");
+  el.className = "viewer-instructions";
+  el.innerHTML = `
+    <div class="row"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Move</div>
+    <div class="row"><kbd>Q</kbd><kbd>E</kbd> Rise / Descend</div>
+    <div class="row"><kbd>R</kbd><kbd>F</kbd> Roll</div>
+    <div class="row"><kbd>Space</kbd> Jump</div>
+    <div class="row">Drag Look</div>
+    <div class="row">Scroll Zoom</div>
+  `;
+  document.body.append(el);
+  return el;
 }
 
 function syncCameraAspect(camera: PerspectiveCamera, viewer: ReturnType<typeof createViewer>) {
@@ -560,6 +623,7 @@ class WalkThirdPersonCharacter {
   private locomotionAnim: CharacterActionName = "Idle";
   private actionFades: ActionFade[] = [];
   private animationPlugin: InstanceType<typeof Animation.AnimationPlugin> | null = null;
+  private boundMeshes: object[] = [];
 
   loaded = false;
   loadError = false;
@@ -573,7 +637,7 @@ class WalkThirdPersonCharacter {
   constructor(
     private readonly scene: Scene3D,
     private readonly viewer: ReturnType<typeof createViewer>,
-    private readonly modelUrl: string,
+    private modelUrl: string,
   ) {
     this.characterRoot.visible = false;
     this.characterRoot.scale.setScalar(THIRD_PERSON_MODEL_SCALE);
@@ -593,6 +657,36 @@ class WalkThirdPersonCharacter {
     if (enabled) this.ensureLoaded();
   }
 
+  /** Swap to a different character GLB, discarding the currently loaded model. */
+  switchModel(url: string) {
+    if (this.modelUrl === url) return;
+    this.modelUrl = url;
+    this.teardownAnimation();
+    disposeSceneObject(this.uprightFix);
+    this.uprightFix.removeAllChildren();
+    this.loaded = false;
+    this.loadError = false;
+    this.loadPromise = undefined;
+    this.characterRoot.visible = false;
+    this.lights.visible = false;
+    if (this.enabled) this.ensureLoaded();
+  }
+
+  /**
+   * Release the previous model's skeleton bindings and mixer. Without this the
+   * plugin keeps updating the discarded model's skeletons every frame and its
+   * skeletonMap grows with every character switch.
+   */
+  private teardownAnimation() {
+    for (const mesh of this.boundMeshes) this.animationPlugin?.unbindSkinned(mesh as never);
+    this.boundMeshes = [];
+    if (this.mixer) this.animationPlugin?.remove(this.mixer as never);
+    this.mixer = null;
+    this.actions = {};
+    this.activeAction = null;
+    this.actionFades = [];
+  }
+
   private ensureLoaded() {
     if (this.loaded || this.loadError || this.loadPromise) return;
     this.loadPromise = this.load();
@@ -600,16 +694,25 @@ class WalkThirdPersonCharacter {
 
   private async load() {
     const { signal } = this.abort;
+    // A switch away mid-load must not have its model land in the scene when the
+    // slow load finally resolves — switchModel() clears loadPromise, so the two
+    // loads would otherwise both complete and both add a character.
+    const url = this.modelUrl;
+    const stale = () => signal.aborted || this.modelUrl !== url;
     try {
-      const response = await fetch(this.modelUrl, { signal });
+      const response = await fetch(url, { signal });
       const buffer = await response.arrayBuffer();
-      if (signal.aborted) return;
+      if (stale()) return;
       const result = await loadGLTF(buffer, { textureLoader: downloadTexture });
-      if (signal.aborted) return;
+      if (stale()) return;
 
       const model = result.scene as unknown as Object3D;
-      this.animationPlugin = new AnimationPlugin();
-      this.animationPlugin.registerToViewer({ viewer: this.viewer } as never);
+      // One plugin for the character's lifetime — registering a fresh one per
+      // model switch would leave the old one running in the viewer forever.
+      if (!this.animationPlugin) {
+        this.animationPlugin = new AnimationPlugin();
+        this.animationPlugin.registerToViewer({ viewer: this.viewer } as never);
+      }
       this.mixer = new AnimationMixer(model as never);
       this.animationPlugin.add(this.mixer);
 
@@ -621,6 +724,7 @@ class WalkThirdPersonCharacter {
           if (bound.has(skinnedMesh)) return;
           bound.add(skinnedMesh);
           this.animationPlugin!.bindSkinned(skinnedMesh as never, skeleton, this.mixer as never);
+          this.boundMeshes.push(skinnedMesh);
         });
       });
 
@@ -652,8 +756,8 @@ class WalkThirdPersonCharacter {
       this.lights.visible = this.enabled;
       this.viewer.render();
     } catch (error) {
-      if (signal.aborted) return;
-      console.error("[walkthrough] robot avatar load failed:", error);
+      if (stale()) return;
+      console.error("[walkthrough] character avatar load failed:", error);
       this.loadError = true;
     }
   }
@@ -737,6 +841,7 @@ class WalkThirdPersonCharacter {
 
   dispose() {
     this.abort.abort();
+    this.teardownAnimation();
     try {
       (this.viewer as { unregisterPlugin?: (p: unknown) => void }).unregisterPlugin?.(this.animationPlugin);
     } catch {
@@ -773,7 +878,10 @@ async function main() {
   const thirdPersonCamera = new PerspectiveCamera(60, 1, 0.1, 2000);
   thirdPersonCamera.up.set(CAMERA_UP[0], CAMERA_UP[1], CAMERA_UP[2]);
   let thirdPersonEnabled = false;
-  const robotCharacter = new WalkThirdPersonCharacter(viewer.getScene(), viewer, ROBOT_MODEL_URL);
+  const thirdPersonCharacter = new WalkThirdPersonCharacter(viewer.getScene(), viewer, ROBOT_MODEL_URL);
+  const instructions = createInstructionsOverlay();
+  container.addEventListener("mouseenter", () => instructions.classList.add("visible"));
+  container.addEventListener("mouseleave", () => instructions.classList.remove("visible"));
   const worldDirScratch = new Vector3();
   const control = new CameraControl(camera, container, {
     enabled: true,
@@ -821,7 +929,7 @@ async function main() {
   // reconstruction-hole pose) from the browser console.
   (window as unknown as { __wtCamera: unknown; __wtControl: unknown }).__wtCamera = camera;
   (window as unknown as { __wtCamera: unknown; __wtControl: unknown }).__wtControl = control;
-  (window as unknown as { __wtRobot: unknown }).__wtRobot = robotCharacter;
+  (window as unknown as { __wtRobot: unknown }).__wtRobot = thirdPersonCharacter;
 
   function applyViewerConfig() {
     setViewerConfig(viewer, {
@@ -907,9 +1015,15 @@ async function main() {
     restoreCamera(camera, await navigator.clipboard.readText());
     requestRender();
   });
-  controls.thirdPerson.addEventListener("change", () => {
-    thirdPersonEnabled = controls.thirdPerson.checked;
-    if (thirdPersonEnabled) robotCharacter.setEnabled(true);
+  controls.character.addEventListener("change", () => {
+    const id = controls.character.value as ThirdPersonCharacterId | "off";
+    thirdPersonEnabled = id !== "off";
+    if (id === "off") {
+      thirdPersonCharacter.setEnabled(false);
+    } else {
+      thirdPersonCharacter.switchModel(THIRD_PERSON_CHARACTERS[id].url);
+      thirdPersonCharacter.setEnabled(true);
+    }
     viewer.setCamera(thirdPersonEnabled ? thirdPersonCamera : camera);
     requestRender();
   });
@@ -932,7 +1046,7 @@ async function main() {
 
     const feetY = camera.position.y + FEET_OFFSET;
     const speed = Math.hypot(camera.position.x - lastPlayerX, camera.position.z - lastPlayerZ) / Math.max(delta, 1 / 240);
-    robotCharacter.update(camera.position.x, feetY, camera.position.z, yaw, speed, delta);
+    thirdPersonCharacter.update(camera.position.x, feetY, camera.position.z, yaw, speed, delta);
     lastPlayerX = camera.position.x;
     lastPlayerZ = camera.position.z;
   }
