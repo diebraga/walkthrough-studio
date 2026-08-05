@@ -51,6 +51,7 @@ import {
 } from './portals';
 import { resolvePortalTeleport, type TeleportPose } from './teleport';
 import { flyVector } from './fly-mode';
+import { mobileJoystickInput } from './mobile-joystick';
 import { formatDeveloperPose } from './dev-position';
 import { splatUrl } from './asset-url';
 import { FloorPlaneCollision, type FloorPlaneOptions } from './floor-plane';
@@ -559,6 +560,7 @@ export class ViewerWalkMode {
 
     private enabled = false;
     private keys: Record<string, boolean> = {};
+    private touchMove = { forward: 0, strafe: 0 };
     private mouseLookDragging = false;
 
     private yaw = 0;
@@ -699,6 +701,12 @@ export class ViewerWalkMode {
         this.clearInputState();
     }
 
+    /** Mobile analog stick input, normalized to the same range as WASD. */
+    setTouchMove(forward: number, strafe: number) {
+        this.touchMove.forward = Math.max(-1, Math.min(1, forward));
+        this.touchMove.strafe = Math.max(-1, Math.min(1, strafe));
+    }
+
     /** Set third-person orbit distance and look height. */
     setThirdPersonCamera(distance: number, targetHeight: number, minDistance = 0.8, maxDistance = 4) {
         this.thirdPersonDistanceMin = Math.max(0.2, Math.min(4, minDistance));
@@ -826,8 +834,14 @@ export class ViewerWalkMode {
             this.grounded = false;
         }
 
-        const forwardInput = (this.keys.KeyW ? 1 : 0) - (this.keys.KeyS ? 1 : 0);
-        const strafeInput = (this.keys.KeyD ? 1 : 0) - (this.keys.KeyA ? 1 : 0);
+        const forwardInput = Math.max(
+            -1,
+            Math.min(1, (this.keys.KeyW ? 1 : 0) - (this.keys.KeyS ? 1 : 0) + this.touchMove.forward),
+        );
+        const strafeInput = Math.max(
+            -1,
+            Math.min(1, (this.keys.KeyD ? 1 : 0) - (this.keys.KeyA ? 1 : 0) + this.touchMove.strafe),
+        );
         const move = new Vector3();
         const hasMoveInput = forwardInput !== 0 || strafeInput !== 0;
         const forward = new Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
@@ -862,8 +876,14 @@ export class ViewerWalkMode {
     /** Developer camera: fly through the scan without gravity or collision. */
     private stepFly(dt: number) {
         const input = {
-            forward: (this.keys.KeyW ? 1 : 0) - (this.keys.KeyS ? 1 : 0),
-            strafe: (this.keys.KeyD ? 1 : 0) - (this.keys.KeyA ? 1 : 0),
+            forward: Math.max(
+                -1,
+                Math.min(1, (this.keys.KeyW ? 1 : 0) - (this.keys.KeyS ? 1 : 0) + this.touchMove.forward),
+            ),
+            strafe: Math.max(
+                -1,
+                Math.min(1, (this.keys.KeyD ? 1 : 0) - (this.keys.KeyA ? 1 : 0) + this.touchMove.strafe),
+            ),
             vertical: (this.keys.Space ? 1 : 0) - (this.keys.ShiftLeft || this.keys.ShiftRight ? 1 : 0),
         };
         const v = flyVector(input, this.yaw, this.pitch, this.moveSpeed);
@@ -1138,6 +1158,7 @@ export class ViewerWalkMode {
 
     private clearInputState() {
         this.keys = {};
+        this.setTouchMove(0, 0);
         this.mouseLookDragging = false;
     }
 
@@ -2348,6 +2369,8 @@ class WalkDemoApp {
     private restoredCamera: ReturnType<Viewer['getCamera']> | undefined;
     private thirdPersonCharacterBinding: { refresh(): void } | undefined;
     private portalFade: HTMLDivElement | undefined;
+    private mobileJoystick: HTMLDivElement | undefined;
+    private mobileJoystickStyle: HTMLStyleElement | undefined;
     private teleporting = false;
     private firstSceneLoad = true;
 
@@ -2380,6 +2403,7 @@ class WalkDemoApp {
             console.log(`[walk] developer settings active: ${flags.join(', ')} (see docs/dev-settings.md)`);
         }
         this.mountConfigPanel();
+        this.mountMobileJoystick();
         /** Frame callback returns whether the runtime should render. */
         this.ctx.renderer.frame(({ delta }) => this.onFrame(delta));
         await this.queueReloadScene();
@@ -2628,6 +2652,85 @@ class WalkDemoApp {
         document.body.append(overlay);
         this.portalFade = overlay;
         return overlay;
+    }
+
+    private mountMobileJoystick(): void {
+        if (this.mobileJoystick) {
+            return;
+        }
+        const style = document.createElement('style');
+        style.textContent = `
+.walk-mobile-joystick {
+  position: fixed;
+  left: max(18px, env(safe-area-inset-left));
+  bottom: max(22px, env(safe-area-inset-bottom));
+  width: 112px;
+  height: 112px;
+  display: none;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  box-shadow: 0 14px 44px rgba(0, 0, 0, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  backdrop-filter: blur(18px) saturate(1.6);
+  -webkit-backdrop-filter: blur(18px) saturate(1.6);
+  touch-action: none;
+  z-index: 4;
+}
+.walk-mobile-joystick__knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 50px;
+  height: 50px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.34);
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.55);
+  transform: translate(-50%, -50%);
+}
+@media (hover: none) and (pointer: coarse) and (orientation: landscape) {
+  .walk-mobile-joystick { display: block; }
+}`;
+        const joystick = document.createElement('div');
+        joystick.className = 'walk-mobile-joystick';
+        joystick.setAttribute('aria-hidden', 'true');
+        const knob = document.createElement('div');
+        knob.className = 'walk-mobile-joystick__knob';
+        joystick.append(knob);
+
+        let pointerId: number | undefined;
+        const radius = 42;
+        const reset = () => {
+            pointerId = undefined;
+            knob.style.transform = 'translate(-50%, -50%)';
+            this.walk?.setTouchMove(0, 0);
+        };
+        const update = (e: PointerEvent) => {
+            const rect = joystick.getBoundingClientRect();
+            const input = mobileJoystickInput(e.clientX - rect.left - rect.width / 2, e.clientY - rect.top - rect.height / 2, radius);
+            knob.style.transform = `translate(-50%, -50%) translate(${input.knobX}px, ${input.knobY}px)`;
+            this.walk?.setTouchMove(input.forward, input.strafe);
+        };
+        joystick.addEventListener('pointerdown', e => {
+            pointerId = e.pointerId;
+            joystick.setPointerCapture(e.pointerId);
+            update(e);
+            e.preventDefault();
+        });
+        joystick.addEventListener('pointermove', e => {
+            if (pointerId !== e.pointerId) {
+                return;
+            }
+            update(e);
+            e.preventDefault();
+        });
+        joystick.addEventListener('pointerup', reset);
+        joystick.addEventListener('pointercancel', reset);
+
+        document.head.append(style);
+        document.body.append(joystick);
+        this.mobileJoystickStyle = style;
+        this.mobileJoystick = joystick;
     }
 
     private async copyCurrentPosition(): Promise<void> {
@@ -2984,6 +3087,10 @@ class WalkDemoApp {
         this.scene = undefined;
         this.portalFade?.remove();
         this.portalFade = undefined;
+        this.mobileJoystick?.remove();
+        this.mobileJoystick = undefined;
+        this.mobileJoystickStyle?.remove();
+        this.mobileJoystickStyle = undefined;
         this.ctx.configPanel.clear();
         const cam = this.restoredCamera;
         this.restoredCamera = undefined;
