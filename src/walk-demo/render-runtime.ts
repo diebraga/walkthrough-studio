@@ -120,23 +120,18 @@ function createIndexedDBStorage(dbName: string): RuntimeIndexedDBStorage {
  */
 const OVERLAY_ROOT = document.body;
 
-/** Loading overlay matching the playground's "show while a scene loads" behaviour. */
-function createLoading(): RuntimeLoadingController & { el: HTMLElement } {
-  const el = document.createElement("div");
-  el.style.cssText =
-    "position:fixed;inset:0;display:none;align-items:center;justify-content:center;" +
-    "color:#eee;font:14px/1 system-ui,sans-serif;background:rgba(0,0,0,.6);z-index:1";
-  el.textContent = "Loading…";
-  OVERLAY_ROOT.append(el);
+/**
+ * No-op loading controller.
+ *
+ * The overlay is gone: the opening anneal is the transition now, so a scene
+ * resolves into place rather than being covered by a "Loading…" card. The
+ * interface stays because walk-demo.ts is a copy of upstream and calls
+ * ctx.loading.show()/hide() — keeping it satisfied avoids editing that file.
+ */
+function createLoading(): RuntimeLoadingController {
   return {
-    el,
-    show(label) {
-      el.textContent = label ?? "Loading…";
-      el.style.display = "flex";
-    },
-    hide() {
-      el.style.display = "none";
-    },
+    show() {},
+    hide() {},
   };
 }
 
@@ -166,11 +161,11 @@ function createConfigPanel(): RuntimeConfigPanel {
 }
 
 /**
- * Build the runtime context the example expects. `container` hosts the canvas,
- * the loading overlay, and the tweakpane panel.
+ * Build the runtime context the example expects. `container` hosts the canvas;
+ * the tweakpane panel mounts on document.body.
  */
 export function createRenderRuntime(container: HTMLElement): RenderRuntime & { dispose(): void } {
-  // The loading overlay and config panel are absolutely positioned inside it.
+  // Positioned so anything overlaid on the viewport can anchor to it.
   container.style.position = "relative";
   const viewer = createViewer("walk-demo-viewer", container, { antialiasing: false });
   const scene = viewer.getScene() as Scene3D;
@@ -246,7 +241,6 @@ export function createRenderRuntime(container: HTMLElement): RenderRuntime & { d
       window.removeEventListener("resize", onResize);
       resizeObserver.disconnect();
       configPanel.clear();
-      loading.el.remove();
       configPanel.container.remove();
     },
   };

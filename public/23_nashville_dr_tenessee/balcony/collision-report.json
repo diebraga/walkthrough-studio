@@ -1,0 +1,39 @@
+{
+  "input": "public/23_nashville_dr_tenessee/balcony/index.ply",
+  "cell": 0.15,
+  "warnings": [
+    "ceiling height 6m outside 2-5m — scene may not be metric",
+    "walkable/floor ratio 0.34 looks wrong"
+  ],
+  "sampledPoints": 250000,
+  "opacityGate": 0.115,
+  "solidPoints": 162500,
+  "normalEigenvalues": [
+    427.9,
+    297.9,
+    261.5
+  ],
+  "upAxis": [
+    -0.1333,
+    0.9906,
+    0.029
+  ],
+  "flipped": true,
+  "floor": {
+    "y": -0.764,
+    "tiltDeg": 0.32,
+    "rmsMeters": 0.038,
+    "inlierCells": 181
+  },
+  "levellingIterations": 8,
+  "floorY": -1.233,
+  "ceilingY": 4.767,
+  "wallHeight": 6,
+  "residualTiltDeg": 0.75,
+  "obstacleThreshold": 150,
+  "componentCount": 59,
+  "walkableCells": 316,
+  "walkableAreaM2": 7.1,
+  "floorCells": 918,
+  "walkableFractionOfFloor": 0.34
+}

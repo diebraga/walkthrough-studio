@@ -20,7 +20,7 @@ export interface Portal {
     /** Target scene. Null until scenes are linked. */
     to: string | null;
     /** Arrival pose in the target scene. Null until scenes are linked. */
-    spawn: { x: number; y: number; z: number; yaw: number } | null;
+    spawn: { x: number; y: number; z: number; yaw: number; pitch?: number } | null;
 }
 
 const DEFAULT_RADIUS = 0.8;

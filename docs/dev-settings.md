@@ -18,10 +18,10 @@ precedence.
 Override per-tab with a query param, which is then remembered in `localStorage`:
 
 ```
-/test?dev=1                     every flag
-/test?dev=collision             one flag
-/test?dev=collision,portals     several
-/test?dev=0                     everything off, ignoring the .env default
+/?dev=1                         every flag
+/?dev=collision                 one flag
+/?dev=collision,portals         several
+/?dev=0                         everything off, ignoring the .env default
 ```
 
 ### Flags vs toggles
@@ -48,6 +48,17 @@ methods still ship as dead code, because class methods are not tree-shaken. To
 drop them from the bundle the panel would have to move into a dynamically
 imported module. Nothing runs, and the write endpoint does not exist server-side,
 so this is bundle weight rather than exposure.
+
+## General developer controls
+
+When any dev flag is active, the Camera menu adds **Fly**. It is a free camera:
+WASD moves through the scan, Space rises, Shift descends, and collision/gravity
+are ignored.
+
+When `VITE_DEV_FLAGS` is set in the env file, the panel also adds **Copy
+position**, which writes the current camera pose as JSON to the clipboard. Query
+params alone do not add this control. Use it while flying to capture a spawn
+candidate.
 
 ## `collision`
 

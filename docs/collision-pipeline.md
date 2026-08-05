@@ -51,13 +51,52 @@ piece of furniture being mistaken for the floor.
 
 | Field | Meaning |
 |---|---|
-| `rotation` | 3×3 to level the scene; apply to the splat layer if not ~identity |
+| `rotation` | 3×3 that levels the scan; the scene applies it to the splat layer on load |
 | `floorY`, `ceilingY`, `wallHeight` | measured heights |
 | `cell`, `origin`, `size` | grid layout |
 | `walkable` | base64 bitmask, one bit per cell, row-major over (x, z) |
 
-Consumed by `src/walk-demo/grid-collision.ts`, which serves the floor plane and
-the wall cells from the one file.
+## Runtime
+
+`src/walk-demo/grid-collision.ts` serves **both colliders from this one file**:
+
+- **floor** — a plane at `floorY`. Asserted, not detected: the scan's floor is
+  captured at grazing angles and barely voxelizes, so requiring it per-cell is
+  what made you fall through.
+- **walls** — every grid cell outside the walkable region, solid from the floor
+  up to `wallHeight`. Rays use a 2D DDA across the grid; capsules get pushed out
+  of the nearest overlapping cell. Cells outside the grid count as solid, so you
+  cannot walk off the bake.
+
+`WalkDemoScene.setLevellingRotation` applies `rotation` to the splat layer on
+load, which is what lets the bucket hold the **original** scan with no
+pre-processing — splat and grid end up in the same frame by construction.
+
+A scene opts in with `collisionGrid` on its `WalkDemoScheme`; when set it
+supersedes the older `voxelJson`/`voxelBin` pair entirely.
+
+## Later: generated, not stored
+
+Baking to a file is a stand-in, like everything else in `public/` — see
+[scene-assets.md](scene-assets.md).
+
+The same analysis can run **in the browser** on the splat that is already being
+downloaded: roughly 200–400 ms, against a 20–40 s splat load. No CLI, no CSV, no
+file. The intended path is:
+
+1. **Automate the bake on upload** — a bucket trigger or CI step runs this tool
+   and stores the result, so the pipeline moves server-side rather than into the
+   viewer's browser.
+2. **Store rows, not files** — the grid and its report become columns on the
+   scene row, fetched with the rest of the scene record.
+3. **Keep on-demand generation as the fallback** for a scene with no stored
+   collision, so dropping in a splat still works.
+
+Baking stays worth doing even once it is automated, for two reasons: the file is
+a few KB and so arrives long before the splat, letting the player be placed on
+solid ground while the scene resolves; and it puts a human in front of the QA
+report before a scene goes live. Generated purely on demand, a scan whose
+up-axis detection fails silently drops the visitor through the world.
 
 ## QA gates
 

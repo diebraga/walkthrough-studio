@@ -10,22 +10,19 @@ growing it. When you add a document, add a line here.
 | Doc | Read it when |
 |---|---|
 | [docs/scene-assets.md](docs/scene-assets.md) | Adding a scene or property, or wondering where an asset lives |
-| [docs/collision-pipeline.md](docs/collision-pipeline.md) | Collision is wrong, or a new scan needs collision built |
+| [docs/collision-pipeline.md](docs/collision-pipeline.md) | Generating floor + wall collision for a scan, or collision is wrong |
 | [docs/dev-settings.md](docs/dev-settings.md) | Turning on the collision overlay or portal capture |
 
 ## Routes
 
-Single-page app; `src/router.ts` maps paths to lazily imported modules.
+Single-page React app; `src/main.tsx` mounts `src/App.tsx`.
 
 | Route | Entry | What it is |
 |---|---|---|
-| `/` | `src/main.ts` | The original studio app |
-| `/test` | `src/walk-demo/entry.ts` | Walk demo — the active development target |
+| `/` | `src/App.tsx` → `src/walk-demo/entry.ts` | Walk demo — the active development target |
 
 Vite serves any root-level `.html` as its own entry, and falls back to
-`index.html` for unknown paths, which is what makes `/test` work. A file named
-`test.html` would shadow the `/test` route, because static files resolve before
-the SPA fallback.
+`index.html` for unknown paths; React Router handles the in-app route.
 
 ## Layout
 
@@ -52,6 +49,7 @@ a scene, and nothing should depend on a database either.
 | the property slug | key of a properties table |
 | each scene folder | a row in a scenes table |
 | `SCENE_HALL` constant in `walk-demo.ts` | the scene record for whatever is being viewed |
+| `collision.json` baked by hand | generated automatically on upload, stored as columns on the scene row |
 | `portals.json` per scene | portal rows, linking scenes to each other |
 | `VITE_DEV_FLAGS` in `.env` | per-user or per-environment settings |
 

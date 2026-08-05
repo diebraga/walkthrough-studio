@@ -6,6 +6,7 @@
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "skipLibCheck": true,
     "moduleResolution": "bundler",
+    "jsx": "react-jsx",
     "resolveJsonModule": true,
     "isolatedModules": true,
     "moduleDetection": "force",
@@ -18,4 +19,3 @@
   "include": ["src"],
   "exclude": ["src/**/*.test.ts"]
 }
-

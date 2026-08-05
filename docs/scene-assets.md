@@ -58,6 +58,10 @@ Portals are captured in-app rather than written by hand — see
 5. Point the app at the folder — currently the `SCENE_HALL` constant in
    `src/walk-demo/walk-demo.ts`.
 
+Collision generation is expected to become automatic — run on upload, stored as
+scene-row columns rather than a file. See
+[collision-pipeline.md](collision-pipeline.md#later-generated-not-stored).
+
 ## Why collision is baked, not computed at load
 
 Collision could be derived in the browser from the splat that is already being
@@ -80,5 +84,5 @@ per-file limit, and a push containing one is rejected outright. `collision.json`
 and `collision-report.json` are small and **are** committed: they are the
 reviewed, derived artefacts.
 
-A fresh clone therefore has no splats and `/test` will not load until one is
+A fresh clone therefore has no splats and `/` will not load until one is
 placed by hand. That is deliberate until the bucket exists.

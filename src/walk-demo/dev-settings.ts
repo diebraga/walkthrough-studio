@@ -17,9 +17,9 @@
  * a file. Production builds ignore all of it — see `devEnabled`.
  */
 
-export type DevFlag = 'collision' | 'portals';
+export type DevFlag = 'collision' | 'portals' | 'perf';
 
-const ALL_FLAGS: readonly DevFlag[] = ['collision', 'portals'];
+const ALL_FLAGS: readonly DevFlag[] = ['collision', 'portals', 'perf'];
 const STORAGE_KEY = 'walkthrough-studio:dev-flags';
 
 /** Null when nothing was ever stored, which is distinct from a stored "off". */
@@ -113,4 +113,9 @@ export function writeDevToggle(name: string, value: boolean): void {
 /** Flags currently on, for logging what is active at startup. */
 export function activeDevFlags(): DevFlag[] {
     return ALL_FLAGS.filter((f) => devEnabled(f));
+}
+
+/** True only when developer tooling is enabled by the env file, not by ?dev=. */
+export function envDevFlagsActive(): boolean {
+    return import.meta.env.DEV && parseFlags(String(import.meta.env.VITE_DEV_FLAGS ?? '')).size > 0;
 }

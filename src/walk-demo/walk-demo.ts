@@ -34,7 +34,13 @@ import {
 } from '@manycore/aholo-viewer';
 import type { Scene3D, Viewer } from '@manycore/aholo-viewer';
 import { CollisionDebugOverlay } from './collision-debug';
-import { activeDevFlags, devEnabled, readDevToggle, writeDevToggle } from './dev-settings';
+import { activeDevFlags, devEnabled, envDevFlagsActive, readDevToggle, writeDevToggle } from './dev-settings';
+import {
+    ANNEAL_DURATION_MS,
+    createMcmcAnnealModifier,
+    measureSplatCloud,
+    openingAnnealProgress,
+} from '../anneal';
 import {
     createPortal,
     loadPortals,
@@ -43,6 +49,9 @@ import {
     savePortals,
     type Portal,
 } from './portals';
+import { resolvePortalTeleport, type TeleportPose } from './teleport';
+import { flyVector } from './fly-mode';
+import { formatDeveloperPose } from './dev-position';
 import { FloorPlaneCollision, type FloorPlaneOptions } from './floor-plane';
 import { GridCollision, type CollisionGridData } from './grid-collision';
 
@@ -572,6 +581,7 @@ export class ViewerWalkMode {
     moveSpeed = 7;
 
     thirdPersonEnabled = false;
+    flyMode = false;
     /**
      * 0 = first-person, 1 = third-person. Eases between the two instead of
      * cutting, so toggling the camera dollies out/in. Read by the demo shell to
@@ -647,16 +657,16 @@ export class ViewerWalkMode {
     }
 
     /** Place the walker at a known position and camera angle. */
-    startAtPose(position: InstanceType<typeof Vector3>, yaw: number, pitch: number) {
+    startAtPose(position: InstanceType<typeof Vector3>, yaw: number, pitch: number, options: { snapToGround?: boolean } = {}) {
         this.position.copy(position);
         this.velocity.set(0, 0, 0);
         this.yaw = yaw;
         this.pitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, pitch));
-        this.activateAtCurrentPose();
+        this.activateAtCurrentPose(options.snapToGround !== false);
     }
 
     /** Reset runtime state, resolve spawn collision, and snap to the ground if one is below. */
-    private activateAtCurrentPose() {
+    private activateAtCurrentPose(snapToGround: boolean) {
         this.enabled = true;
         this.keys = {};
         this.accumulator = 0;
@@ -667,13 +677,15 @@ export class ViewerWalkMode {
         this.thirdPersonCollisionDistance = -1;
         this.thirdPersonOcclusionReleaseTimer = 0;
         this.groundYFiltered = null;
-        this.resolveSpawnCollision();
-        const gy = this.probeGround(this.position);
-        if (gy !== null) {
-            this.grounded = true;
-            this.velocity.y = 0;
-            this.position.y = gy + WALK_HOVER_HEIGHT + WALK_EYE_HEIGHT;
-            this.groundYFiltered = gy;
+        if (snapToGround) {
+            this.resolveSpawnCollision();
+            const gy = this.probeGround(this.position);
+            if (gy !== null) {
+                this.grounded = true;
+                this.velocity.y = 0;
+                this.position.y = gy + WALK_HOVER_HEIGHT + WALK_EYE_HEIGHT;
+                this.groundYFiltered = gy;
+            }
         }
         if (document.activeElement instanceof HTMLElement) {
             document.activeElement.blur();
@@ -752,6 +764,11 @@ export class ViewerWalkMode {
         return { position: this.cameraPosition, rotation: this.cameraRotation, scale: this.cameraScale };
     }
 
+    /** Current controlled pose, used by developer capture tools. */
+    getPose() {
+        return { x: this.position.x, y: this.position.y, z: this.position.z, yaw: this.yaw, pitch: this.pitch };
+    }
+
     /** Current avatar state for the third-person model. */
     getCharacterState(): ViewerWalkCharacterState {
         return {
@@ -766,6 +783,10 @@ export class ViewerWalkMode {
 
     /** One fixed physics step: ground probe, gravity, horizontal movement, and voxel push-out. */
     private step(dt: number) {
+        if (this.flyMode) {
+            this.stepFly(dt);
+            return;
+        }
         const rawGroundY = this.probeGround(this.position);
         const hasGround = rawGroundY !== null;
 
@@ -835,6 +856,21 @@ export class ViewerWalkMode {
 
         this.position.addScaledVector(this.velocity, dt);
         this.resolveCollision();
+    }
+
+    /** Developer camera: fly through the scan without gravity or collision. */
+    private stepFly(dt: number) {
+        const input = {
+            forward: (this.keys.KeyW ? 1 : 0) - (this.keys.KeyS ? 1 : 0),
+            strafe: (this.keys.KeyD ? 1 : 0) - (this.keys.KeyA ? 1 : 0),
+            vertical: (this.keys.Space ? 1 : 0) - (this.keys.ShiftLeft || this.keys.ShiftRight ? 1 : 0),
+        };
+        const v = flyVector(input, this.yaw, this.pitch, this.moveSpeed);
+        this.velocity.set(v.x, v.y, v.z);
+        this.horizontalSpeed = Math.hypot(v.x, v.z);
+        this.grounded = false;
+        this.groundYFiltered = null;
+        this.position.addScaledVector(this.velocity, dt);
     }
 
     /** Build a third-person camera from avatar position, pitch, zoom, and collision. */
@@ -1043,7 +1079,13 @@ export class ViewerWalkMode {
             return;
         }
         this.keys[e.code] = true;
-        if (e.code === 'KeyW' || e.code === 'KeyA' || e.code === 'KeyS' || e.code === 'KeyD') {
+        if (
+            e.code === 'KeyW' ||
+            e.code === 'KeyA' ||
+            e.code === 'KeyS' ||
+            e.code === 'KeyD' ||
+            (this.flyMode && (e.code === 'Space' || e.code === 'ShiftLeft' || e.code === 'ShiftRight'))
+        ) {
             e.preventDefault();
         }
     };
@@ -1162,6 +1204,7 @@ export class ViewerWalkMode {
  * so adding a scene is dropping a folder in, not editing paths in several files.
  */
 const SCENE_HALL = '/23_nashville_dr_tenessee/hall/';
+const SCENE_BALCONY = '/23_nashville_dr_tenessee/balcony/';
 
 const AHOLO_OSS_GS_FILE_BASE = 'https://holo-cos.aholo3d.cn/aholo-opensource/gs_file';
 /** Unused since indoor moved to the local hall-3 scene; kept for the upstream room assets. */
@@ -1655,8 +1698,83 @@ const WALK_CAMERA = {
 } as const;
 
 const LOD_MAGIC_CODE = 2500660;
-const WALK_SPLAT_PACK_TYPE = SplatPackType.Compressed;
-const WALK_MAX_SH_DEGREE = 3;
+/**
+ * Rendering presets, ported from the original studio route's PRESETS and
+ * matching the options in https://aholojs.dev/en-US/manual/3dgs-preset-config/
+ *
+ * Upstream's demo shipped Compressed + full SH with every culling mode off —
+ * settings chosen to look good in a showcase, not to run on a viewer's laptop.
+ * packType and maxShDegree are applied when the splat is PARSED, so changing
+ * preset reloads the scene.
+ */
+type WalkPresetId = 'balanced' | 'performance' | 'quality' | 'extreme';
+
+interface WalkPreset {
+    label: string;
+    packType: (typeof SplatPackType)[keyof typeof SplatPackType];
+    maxShDegree: number;
+    autoFreeResourceOnGpuPacked: boolean;
+    config: object;
+}
+
+const WALK_PRESETS: Record<WalkPresetId, WalkPreset> = {
+    balanced: {
+        label: 'Balanced',
+        packType: SplatPackType.SuperCompressed,
+        maxShDegree: 3,
+        autoFreeResourceOnGpuPacked: false,
+        config: {
+            pack: { precalculateEnabled: true, cameraRelativeEnabled: true },
+            raster: { detailCullingThreshold: 1, maxStdDev: Math.sqrt(8) },
+            sort: { minIntervalMs: 0 },
+        },
+    },
+    performance: {
+        label: 'Performance',
+        packType: SplatPackType.SuperCompressed,
+        maxShDegree: 3,
+        autoFreeResourceOnGpuPacked: true,
+        config: {
+            pack: { precalculateEnabled: true, cameraRelativeEnabled: false },
+            raster: { detailCullingThreshold: 1, maxStdDev: Math.sqrt(5) },
+            sort: { minIntervalMs: 64 },
+        },
+    },
+    quality: {
+        label: 'Quality',
+        packType: SplatPackType.Compressed,
+        maxShDegree: 3,
+        autoFreeResourceOnGpuPacked: true,
+        config: {
+            pack: { highPrecisionEnabled: true, precalculateEnabled: true, cameraRelativeEnabled: false },
+            raster: { detailCullingThreshold: 0, normalizedFalloff: false, maxStdDev: Math.sqrt(8) },
+            sort: { highPrecisionEnabled: false, minIntervalMs: 0 },
+            composite: { highPrecisionEnabled: false },
+        },
+    },
+    extreme: {
+        label: 'Extreme',
+        packType: SplatPackType.SuperCompressed,
+        // No spherical harmonics: 45 of the 59 floats per splat, and view-dependent
+        // lighting adds little indoors.
+        maxShDegree: 0,
+        autoFreeResourceOnGpuPacked: true,
+        config: {
+            pack: { precalculateEnabled: false, cameraRelativeEnabled: false, sortedLayoutEnabled: true },
+            raster: { detailCullingThreshold: 4, maxStdDev: Math.sqrt(5) },
+            sort: { minIntervalMs: 160 },
+        },
+    },
+};
+
+/**
+ * Defaults to 'quality' because that is the closest match to what this demo
+ * shipped before presets existed (Compressed pack, full SH). The lighter presets
+ * are UNVERIFIED here — switch with the Performance panel and compare fps rather
+ * than assuming they are faster. Note no preset exactly reproduces the old
+ * config: none of the raster/sort options were set at all previously.
+ */
+const WALK_DEFAULT_PRESET: WalkPresetId = 'quality';
 
 type WalkLodMeta = SplatUtils.LodMeta;
 type LodSplatInstance = InstanceType<typeof LodSplat>;
@@ -1689,6 +1807,8 @@ class WalkDemoScene {
     private lodSplat: LodSplatInstance | null = null;
     private thirdPerson: WalkThirdPersonCharacter | null = null;
     private thirdPersonModelUrl = WALK_CHARACTER_MODEL_URL_MAN;
+    private preset: WalkPreset = WALK_PRESETS[WALK_DEFAULT_PRESET];
+    private openingTransitionEnabled = true;
 
     constructor(viewer: Viewer) {
         this.viewer = viewer;
@@ -1704,6 +1824,11 @@ class WalkDemoScene {
         this.viewer.setCamera(this.camera);
         this.scene.add(this.splatLayer);
 
+        // Every culling mode stays off, as upstream had it. Turning frustum
+        // culling on FROZE the renderer: this demo drives the camera by writing
+        // its transform directly and forcing a render each frame, and the culling
+        // pass evidently cannot cope with that. Measured, not assumed — do not
+        // "optimise" this back on without testing.
         const cul = (this.viewer as any).defaultViewport.drivenCullingConfig;
         cul.frustumCullingEnabled = false;
         cul.occlusionCullingEnabled = false;
@@ -1712,7 +1837,19 @@ class WalkDemoScene {
         cul.triCullingEnabled = false;
     }
 
-    /** Apply viewer settings needed by this demo. */
+    /** Swap the rendering preset. Caller must reload the scene: packType and
+     *  maxShDegree only take effect when the splat is parsed. */
+    setPreset(preset: WalkPreset): void {
+        this.preset = preset;
+        this.applyViewerConfig();
+    }
+
+    /** Local edit: portal scene switches use a fade, not the first-load anneal. */
+    setOpeningTransitionEnabled(enabled: boolean): void {
+        this.openingTransitionEnabled = enabled;
+    }
+
+    /** Apply viewer settings needed by this demo, plus the active preset. */
     applyViewerConfig(): void {
         setViewerConfig(this.viewer, {
             pipeline: {
@@ -1725,6 +1862,10 @@ class WalkDemoScene {
                 },
                 Splatting: {
                     enabled: true,
+                    // The preset's pack/raster/sort options belong HERE, nested
+                    // under Splatting — not at the top level of setViewerConfig.
+                    // The original studio route used the same nesting.
+                    ...(this.preset.config as object),
                 },
                 TAA: { enabled: false },
             },
@@ -1763,13 +1904,23 @@ class WalkDemoScene {
                 throw new Error(`[walk] Unknown splat file type: ${url}`);
             }
 
-            const splatData = await parseSplatData(type, u8, WALK_SPLAT_PACK_TYPE, {
-                maxShDegree: WALK_MAX_SH_DEGREE,
+            const splatData = await parseSplatData(type, u8, this.preset.packType, {
+                maxShDegree: this.preset.maxShDegree,
                 maxTextureSize: 8192,
             });
             throwIfAborted(signal);
             const splat = await createSplat(splatData);
+            splat.autoFreeResourceOnGpuPacked = this.preset.autoFreeResourceOnGpuPacked;
             throwIfAborted(signal);
+            if (this.openingTransitionEnabled) {
+                // Opening transition, same as the studio route at '/': the splats
+                // anneal into place instead of popping in. The modifier is driven per
+                // frame and removed once it finishes — see tickOpeningTransition.
+                const modifier = createMcmcAnnealModifier(measureSplatCloud(splatData));
+                splat.setModifiers([modifier]);
+                this.opening.push({ splat, modifier });
+                this.openingStartedAt = performance.now();
+            }
             this.splatLayer.add(splat);
         }
     }
@@ -1813,6 +1964,7 @@ class WalkDemoScene {
 
     /** Remove static splats and any active LOD stream. */
     private clearSplats(): void {
+        this.opening.length = 0;
         while (this.splatLayer.children.length > 0) {
             const child = this.splatLayer.children[0]!;
             this.splatLayer.remove(child);
@@ -1912,6 +2064,33 @@ class WalkDemoScene {
         this.splatLayer.updateMatrixWorld(true);
     }
 
+    private opening: { splat: { setModifiers(m: unknown[]): void }; modifier: ReturnType<typeof createMcmcAnnealModifier> }[] = [];
+    private openingStartedAt = 0;
+
+    /**
+     * Advance the opening anneal. Returns true while it is still running, so the
+     * frame loop knows it must keep rendering even if nothing else moved.
+     */
+    tickOpeningTransition(now: number): boolean {
+        if (!this.opening.length) {
+            return false;
+        }
+        const elapsed = now - this.openingStartedAt;
+        const progress = openingAnnealProgress(elapsed, ANNEAL_DURATION_MS);
+        for (const entry of this.opening) {
+            entry.modifier.update({ progress, time: elapsed / 1000 });
+        }
+        if (progress <= 0) {
+            // Done: drop the modifier so the splats render at full speed.
+            for (const entry of this.opening) {
+                entry.splat.setModifiers([]);
+            }
+            this.opening.length = 0;
+            return false;
+        }
+        return true;
+    }
+
     /** Copy walk camera state to the viewer camera. */
     updateCamera(state: ReturnType<ViewerWalkMode['getCameraState']>): void {
         this.camera.scale.copy(state.scale);
@@ -1935,8 +2114,8 @@ class WalkDemoScene {
 // Demo presets and loading helpers
 // -----------------------------------------------------------------------------
 
-type WalkViewMode = 'first' | 'third';
-type WalkDemoSchemeId = 'indoor' | 'outdoor';
+type WalkViewMode = 'first' | 'third' | 'fly';
+type WalkDemoSchemeId = 'indoor' | 'balcony' | 'outdoor';
 
 /** Initial capsule center and camera angles. */
 interface WalkDemoInitialPose {
@@ -1974,6 +2153,15 @@ const WALK_DEMO_INDOOR_POSE: WalkDemoInitialPose = {
     thirdPersonDistance: 3.4,
 };
 
+const WALK_DEMO_BALCONY_POSE: WalkDemoInitialPose = {
+    px: 9.14,
+    py: 0.17,
+    pz: 3.09,
+    yaw: 0,
+    pitch: 0,
+    thirdPersonDistance: 3.4,
+};
+
 const WALK_DEMO_OUTDOOR_POSE: WalkDemoInitialPose = {
     px: 20.398008,
     py: -0.15,
@@ -1985,7 +2173,7 @@ const WALK_DEMO_OUTDOOR_POSE: WalkDemoInitialPose = {
 
 const WALK_DEMO_SCHEMES: Record<WalkDemoSchemeId, WalkDemoScheme> = {
     // Local hall-3 scene. The source Brush export is y-down ("OpenCV -Y", as
-    // src/main.ts documents) but ViewerWalkMode is y-up, so public/splat_hall_3.ply
+    // Brush exports are y-down ("OpenCV -Y") but ViewerWalkMode is y-up, so public/splat_hall_3.ply
     // is the source rotated 180 deg about X. Collision was voxelized from that
     // same rotated file, so splat and collision cannot drift apart. Regenerate with:
     //   npx @playcanvas/splat-transform -w -g 0 <src>.ply -N -r 180,0,0 rot.ply
@@ -2001,6 +2189,14 @@ const WALK_DEMO_SCHEMES: Record<WalkDemoSchemeId, WalkDemoScheme> = {
         // few KB so it lands long before the splat finishes downloading.
         collisionGrid: `${SCENE_HALL}collision.json`,
         pose: WALK_DEMO_INDOOR_POSE,
+    },
+    balcony: {
+        id: 'balcony',
+        splatMode: 'files',
+        assetBase: SCENE_BALCONY,
+        splatCandidates: [`${SCENE_BALCONY}index.ply`],
+        collisionGrid: `${SCENE_BALCONY}collision.json`,
+        pose: WALK_DEMO_BALCONY_POSE,
     },
     outdoor: {
         id: 'outdoor',
@@ -2029,10 +2225,12 @@ function getWalkDemoUiStrings() {
         paneTitle: zh ? '行走模式' : 'Walk mode',
         schemeLabel: zh ? '场景' : 'Scene',
         schemeIndoor: zh ? '室内' : 'Indoor',
+        schemeBalcony: zh ? '阳台' : 'Balcony',
         schemeOutdoor: zh ? '室外' : 'Outdoor',
         viewLabel: zh ? '视角' : 'Camera',
         first: zh ? '第一人称' : 'First-person',
         third: zh ? '第三人称' : 'Third-person',
+        fly: zh ? '飞行' : 'Fly',
         characterLabel: zh ? '第三人称模型' : 'Third-person model',
         characterMan: zh ? '男性' : 'Man',
         characterRobot: zh ? '机器人' : 'Robot',
@@ -2126,10 +2324,13 @@ class WalkDemoApp {
         viewMode: WalkViewMode;
         thirdPersonCharacter: WalkThirdPersonCharacterId;
         showCollision: boolean;
+        preset: WalkPresetId;
+        fps: string;
         showPortals: boolean;
         portalName: string;
         portalStatus: string;
         insidePortal: string;
+        positionStatus: string;
     };
     private portals: Portal[] = [];
     private portalsFolder: FolderApi | undefined;
@@ -2144,6 +2345,9 @@ class WalkDemoApp {
     private hideLoadingOnFrame = false;
     private restoredCamera: ReturnType<Viewer['getCamera']> | undefined;
     private thirdPersonCharacterBinding: { refresh(): void } | undefined;
+    private portalFade: HTMLDivElement | undefined;
+    private teleporting = false;
+    private firstSceneLoad = true;
 
     constructor(ctx: RenderRuntime) {
         this.ctx = ctx;
@@ -2152,6 +2356,8 @@ class WalkDemoApp {
             viewMode: 'third',
             // Changed from the upstream 'man' default.
             thirdPersonCharacter: 'robot',
+            preset: WALK_DEFAULT_PRESET,
+            fps: '-',
             // Debug views default OFF and remember their last state, so a reload
             // never drops you into a scene full of debug geometry.
             showCollision: readDevToggle('showCollision'),
@@ -2161,6 +2367,7 @@ class WalkDemoApp {
             portalName: '',
             portalStatus: '-',
             insidePortal: '-',
+            positionStatus: '-',
         };
     }
 
@@ -2183,12 +2390,11 @@ class WalkDemoApp {
         }
         const ui = getWalkDemoUiStrings();
         const pane = this.ctx.configPanel.createPane({ title: ui.paneTitle });
-        // Outdoor is intentionally left out of the options: only indoor is
-        // wanted for now. The 'outdoor' scheme itself still exists in
-        // WALK_DEMO_SCHEMES, so re-adding it here is all it takes to bring back.
+        // Outdoor is intentionally left out; local property scenes stay listed.
+        // The 'outdoor' scheme still exists, so re-adding it here is enough.
         pane.addBinding(this.params, 'scheme', {
             label: ui.schemeLabel,
-            options: { [ui.schemeIndoor]: 'indoor' },
+            options: { [ui.schemeIndoor]: 'indoor', [ui.schemeBalcony]: 'balcony' },
         }).on('change', () => {
             // Upstream forced 'man' for indoor / 'robot' for outdoor here, which
             // would undo the robot default on the first scene switch. Keep
@@ -2212,13 +2418,41 @@ class WalkDemoApp {
                 this.collisionDebug?.setVisible(this.params.showCollision);
             });
         }
+        // Developer setting: rendering preset and frame rate, for comparing the
+        // 3dgs preset options. See docs/dev-settings.md.
+        if (devEnabled('perf')) {
+            const perf = pane.addFolder({ title: 'Performance' });
+            perf.addBinding(this.params, 'preset', {
+                label: 'Preset',
+                options: Object.fromEntries(
+                    (Object.keys(WALK_PRESETS) as WalkPresetId[]).map((id) => [WALK_PRESETS[id].label, id]),
+                ),
+            }).on('change', () => {
+                // packType and maxShDegree apply at parse time, so this costs a
+                // full scene reload — expected, not a bug.
+                this.scene?.setPreset(WALK_PRESETS[this.params.preset]);
+                void this.queueReloadScene();
+            });
+            perf.addBinding(this.params, 'fps', { readonly: true, label: 'fps' });
+        }
+
         // Developer setting: portal capture. See docs/dev-settings.md.
         if (devEnabled('portals')) {
             this.mountPortalPanel(pane);
         }
+        if (envDevFlagsActive()) {
+            pane.addButton({ title: 'Copy position' }).on('click', () => {
+                void this.copyCurrentPosition();
+            });
+            pane.addBinding(this.params, 'positionStatus', { readonly: true, label: 'position' });
+        }
+        const viewOptions: Record<string, WalkViewMode> = { [ui.first]: 'first', [ui.third]: 'third' };
+        if (activeDevFlags().length) {
+            viewOptions[ui.fly] = 'fly';
+        }
         pane.addBinding(this.params, 'viewMode', {
             label: ui.viewLabel,
-            options: { [ui.first]: 'first', [ui.third]: 'third' },
+            options: viewOptions,
         }).on('change', () => {
             const walk = this.walk;
             const scene = this.scene;
@@ -2321,9 +2555,6 @@ class WalkDemoApp {
      * enter starts it, exit cancels a prefetch if you step back out.
      */
     private updatePortalTrigger(walk: ViewerWalkMode, x: number, z: number): void {
-        if (!devEnabled('portals')) {
-            return;
-        }
         const current = portalAt(this.portals, x, z);
         if (current?.name !== this.insidePortalName) {
             if (this.insidePortalName) {
@@ -2331,6 +2562,7 @@ class WalkDemoApp {
             }
             if (current) {
                 console.log(`[portal] entered ${current.name}`, current.to ? `-> ${current.to}` : '(no target yet)');
+                void this.teleportThroughPortal(current);
             }
             this.insidePortalName = current?.name;
             this.params.insidePortal = current?.name ?? '-';
@@ -2341,7 +2573,77 @@ class WalkDemoApp {
         }
     }
 
+    private async teleportThroughPortal(portal: Portal): Promise<void> {
+        if (this.teleporting) {
+            return;
+        }
+        const target = resolvePortalTeleport(portal, new Set(Object.keys(WALK_DEMO_SCHEMES) as WalkDemoSchemeId[]));
+        if (!target) {
+            return;
+        }
+        this.teleporting = true;
+        try {
+            await this.setPortalFade(1);
+            await this.queueReloadScene(target);
+            await this.setPortalFade(0);
+        } finally {
+            this.teleporting = false;
+        }
+    }
+
+    private setPortalFade(opacity: 0 | 1): Promise<void> {
+        const overlay = this.getPortalFade();
+        overlay.style.pointerEvents = opacity ? 'auto' : 'none';
+        return new Promise(resolve => {
+            let fallback = 0;
+            const done = () => {
+                window.clearTimeout(fallback);
+                overlay.removeEventListener('transitionend', done);
+                resolve();
+            };
+            overlay.addEventListener('transitionend', done, { once: true });
+            requestAnimationFrame(() => {
+                overlay.style.opacity = String(opacity);
+                fallback = window.setTimeout(done, 260);
+            });
+        });
+    }
+
+    private getPortalFade(): HTMLDivElement {
+        if (this.portalFade) {
+            return this.portalFade;
+        }
+        const overlay = document.createElement('div');
+        overlay.style.cssText = [
+            'position:fixed',
+            'inset:0',
+            'background:#000',
+            'opacity:0',
+            'pointer-events:none',
+            'transition:opacity 220ms ease',
+            'z-index:9999',
+        ].join(';');
+        document.body.append(overlay);
+        this.portalFade = overlay;
+        return overlay;
+    }
+
+    private async copyCurrentPosition(): Promise<void> {
+        const walk = this.walk;
+        if (!walk) {
+            return;
+        }
+        try {
+            await navigator.clipboard.writeText(formatDeveloperPose(walk.getPose()));
+            this.params.positionStatus = 'copied';
+        } catch (error) {
+            this.params.positionStatus = `copy failed: ${String((error as Error)?.message ?? error)}`;
+        }
+    }
+
     private insidePortalName: string | undefined;
+    private frameCount = 0;
+    private fpsSampledAt = performance.now();
 
     /** Apply third-person camera distance for the current scene. */
     private applyThirdPersonCameraToWalk(walk: ViewerWalkMode, scheme: WalkDemoScheme): void {
@@ -2393,19 +2695,24 @@ class WalkDemoApp {
     /** Apply first-person or third-person mode to walk and scene state. */
     private applyViewMode(walk: ViewerWalkMode, scene: WalkDemoScene): void {
         const third = this.params.viewMode === 'third';
+        const fly = this.params.viewMode === 'fly' && activeDevFlags().length > 0;
+        if (this.params.viewMode === 'fly' && !fly) {
+            this.params.viewMode = 'first';
+        }
+        walk.flyMode = fly;
         walk.thirdPersonEnabled = third;
         walk.thirdPersonCameraPreset = this.params.scheme === 'outdoor' ? 'outdoor' : 'indoor';
         const indoorSpeed = third ? 1.35 : 2.7;
-        walk.moveSpeed = this.params.scheme === 'outdoor' ? 2.15 : indoorSpeed;
+        walk.moveSpeed = fly ? 4.5 : this.params.scheme === 'outdoor' ? 2.15 : indoorSpeed;
         // Avatar visibility is owned by onFrame, which keeps it on until the
         // camera has blended away from the head — hiding it here would pop.
         void scene;
     }
 
     /** Serialize scene reloads so rapid UI changes do not overlap. */
-    private queueReloadScene(): Promise<void> {
+    private queueReloadScene(options: { scheme?: WalkDemoSchemeId; pose?: TeleportPose; skipOpeningTransition?: boolean } = {}): Promise<void> {
         this.reloadChain = this.reloadChain
-            .then(() => this.reloadScene())
+            .then(() => this.reloadScene(options))
             .catch(error => {
                 if (!isReloadAbortError(error)) {
                     console.error('[walk] Scene reload failed:', error);
@@ -2442,6 +2749,19 @@ class WalkDemoApp {
             sceneLoop.tickLod();
         }
 
+        // Keep rendering while the opening anneal runs, even if nothing else in
+        // the scene changed this frame.
+        const now = performance.now();
+        sceneLoop.tickOpeningTransition(now);
+
+        // Frame rate, sampled over ~half a second so the number is readable.
+        this.frameCount++;
+        if (now - this.fpsSampledAt > 500) {
+            this.params.fps = String(Math.round((this.frameCount * 1000) / (now - this.fpsSampledAt)));
+            this.frameCount = 0;
+            this.fpsSampledAt = now;
+        }
+
         if (this.hideLoadingOnFrame) {
             this.hideLoadingOnFrame = false;
             this.ctx.loading.hide();
@@ -2450,12 +2770,16 @@ class WalkDemoApp {
     }
 
     /** Reload splats or LOD, avatar, walk mode, and voxel collision. */
-    private async reloadScene(): Promise<void> {
+    private async reloadScene(options: { scheme?: WalkDemoSchemeId; pose?: TeleportPose; skipOpeningTransition?: boolean } = {}): Promise<void> {
         this.reloadAbort?.abort();
         this.reloadAbort = new AbortController();
         const reloadSignal = this.reloadAbort.signal;
         const generation = ++this.reloadGeneration;
+        if (options.scheme) {
+            this.params.scheme = options.scheme;
+        }
         const scheme = WALK_DEMO_SCHEMES[this.params.scheme];
+        const useOpeningTransition = this.firstSceneLoad && !options.skipOpeningTransition;
 
         this.running = false;
         this.collisionDebug?.dispose();
@@ -2476,6 +2800,7 @@ class WalkDemoApp {
         }
 
         const scene = new WalkDemoScene(viewer);
+        scene.setOpeningTransitionEnabled(useOpeningTransition);
         scene.setThirdPersonModelUrl(WALK_THIRD_PERSON_CHARACTER_URLS[this.params.thirdPersonCharacter]);
         this.scene = scene;
         this.ctx.renderer.resize();
@@ -2525,8 +2850,10 @@ class WalkDemoApp {
             if (generation !== this.reloadGeneration) {
                 return;
             }
-            const p = scheme.pose;
-            walk.startAtPose(new Vector3(p.px, p.py, p.pz), p.yaw, p.pitch);
+            const p = options.pose ?? scheme.pose;
+            if (!options.pose) {
+                walk.startAtPose(new Vector3(p.px, p.py, p.pz), p.yaw, p.pitch);
+            }
             if (scheme.splatMode === 'lod') {
                 scene.updateCamera(walk.getCameraState());
                 scene.tickLod();
@@ -2534,6 +2861,12 @@ class WalkDemoApp {
             }
 
             await this.tryLoadCollision(walk, scene, scheme, reloadSignal);
+            if (options.pose) {
+                walk.startAtPose(new Vector3(p.px, p.py, p.pz), p.yaw, p.pitch, { snapToGround: false });
+                walk.update(0);
+                scene.updateCamera(walk.getCameraState());
+                this.ctx.renderer.render();
+            }
 
             this.portals = scheme.assetBase ? await loadPortals(scheme.assetBase, reloadSignal) : [];
             this.rebuildPortalList();
@@ -2549,6 +2882,7 @@ class WalkDemoApp {
 
             this.ctx.renderer.resize();
             this.running = true;
+            this.firstSceneLoad = false;
             this.hideLoadingOnFrame = true;
             throwIfAborted(reloadSignal);
         } catch (error) {
@@ -2646,6 +2980,8 @@ class WalkDemoApp {
         this.walk = undefined;
         this.scene?.dispose();
         this.scene = undefined;
+        this.portalFade?.remove();
+        this.portalFade = undefined;
         this.ctx.configPanel.clear();
         const cam = this.restoredCamera;
         this.restoredCamera = undefined;

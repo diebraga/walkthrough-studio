@@ -10,10 +10,16 @@
   },
   "dependencies": {
     "@manycore/aholo-viewer": "^1.8.1",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-router-dom": "^7.18.2",
     "tweakpane": "^4.0.5"
   },
   "devDependencies": {
     "@tweakpane/core": "^2.0.5",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@vitejs/plugin-react": "^5.2.0",
     "typescript": "^5",
     "vite": "^7"
   }

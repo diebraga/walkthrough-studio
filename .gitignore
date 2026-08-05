@@ -12,5 +12,6 @@ splat_hall_3.ply
 public/**/*.ply
 # repowise: derived index and caches, rebuilt by `repowise init`
 .repowise/
-# personal dev overrides; .env holds the shared defaults
+# dev tooling config; local only
+.env
 .env.local

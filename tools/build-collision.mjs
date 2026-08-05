@@ -446,6 +446,7 @@ function main(argv) {
     }
     const outDir = argv[argv.indexOf('--out') + 1] ?? 'public/collision';
     const cell = Number(argv[argv.indexOf('--cell') + 1]) || 0.15;
+    const forceFlip = argv.includes('--flip');
 
     const workDir = join(tmpdir(), `build-collision-${process.pid}`);
     mkdirSync(workDir, { recursive: true });
@@ -502,7 +503,7 @@ function main(argv) {
         // Sign: the floor has the scene above it. If most volume sits below the
         // strongest layer, we are upside down.
         const above = rotated.filter((p) => p[1] > strongest.y).length;
-        if (above < rotated.length * 0.5) {
+        if (forceFlip || above < rotated.length * 0.5) {
             rot = matmul(rotationBetween([0, 1, 0], [0, -1, 0]), rot);
             rotated = solid.map((p) => apply(rot, p));
             layers = horizontalLayers(rotated, cell * 4, 0.2);
