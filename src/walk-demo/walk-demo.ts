@@ -52,6 +52,7 @@ import {
 import { resolvePortalTeleport, type TeleportPose } from './teleport';
 import { flyVector } from './fly-mode';
 import { formatDeveloperPose } from './dev-position';
+import { splatUrl } from './asset-url';
 import { FloorPlaneCollision, type FloorPlaneOptions } from './floor-plane';
 import { GridCollision, type CollisionGridData } from './grid-collision';
 
@@ -1205,6 +1206,7 @@ export class ViewerWalkMode {
  */
 const SCENE_HALL = '/23_nashville_dr_tenessee/hall/';
 const SCENE_BALCONY = '/23_nashville_dr_tenessee/balcony/';
+const SPLAT_BASE_URL = String(import.meta.env.VITE_SPLAT_BASE_URL ?? '');
 
 const AHOLO_OSS_GS_FILE_BASE = 'https://holo-cos.aholo3d.cn/aholo-opensource/gs_file';
 /** Unused since indoor moved to the local hall-3 scene; kept for the upstream room assets. */
@@ -2184,7 +2186,7 @@ const WALK_DEMO_SCHEMES: Record<WalkDemoSchemeId, WalkDemoScheme> = {
         id: 'indoor',
         splatMode: 'files',
         assetBase: SCENE_HALL,
-        splatCandidates: [`${SCENE_HALL}index.ply`],
+        splatCandidates: [splatUrl(SCENE_HALL, SPLAT_BASE_URL)],
         // Baked by tools/build-collision.mjs; supplies floor AND walls, and is a
         // few KB so it lands long before the splat finishes downloading.
         collisionGrid: `${SCENE_HALL}collision.json`,
@@ -2194,7 +2196,7 @@ const WALK_DEMO_SCHEMES: Record<WalkDemoSchemeId, WalkDemoScheme> = {
         id: 'balcony',
         splatMode: 'files',
         assetBase: SCENE_BALCONY,
-        splatCandidates: [`${SCENE_BALCONY}index.ply`],
+        splatCandidates: [splatUrl(SCENE_BALCONY, SPLAT_BASE_URL)],
         collisionGrid: `${SCENE_BALCONY}collision.json`,
         pose: WALK_DEMO_BALCONY_POSE,
     },

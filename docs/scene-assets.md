@@ -45,6 +45,11 @@ in; nothing has to be renamed or wired up elsewhere.
 Portals are captured in-app rather than written by hand — see
 [dev-settings.md](dev-settings.md).
 
+In deployed environments, large `index.ply` files are loaded from object storage
+when `VITE_SPLAT_BASE_URL` is set. The small files in each scene folder
+(`collision.json`, `collision-report.json`, `portals.json`) still come from the
+app's `public/` folder.
+
 ## Adding a scene
 
 1. `mkdir -p public/<property-slug>/<scene>/`
