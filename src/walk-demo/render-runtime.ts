@@ -6,7 +6,7 @@
  * playground's own `src/client/render-runtime.d.ts`; `createRenderRuntime`
  * is our implementation of them on a plain page.
  */
-import { createViewer, type Scene3D, type Viewer } from "@manycore/aholo-viewer";
+import { createViewer, type PerspectiveCamera, type Scene3D, type Viewer } from "@manycore/aholo-viewer";
 import { Pane } from "tweakpane";
 import { CameraControl } from "../camera-control";
 
