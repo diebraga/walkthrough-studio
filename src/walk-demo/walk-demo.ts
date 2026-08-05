@@ -31,6 +31,22 @@ import {
     Color,
 } from '@manycore/aholo-viewer';
 import type { Scene3D, Viewer } from '@manycore/aholo-viewer';
+import { CollisionDebugOverlay } from './collision-debug';
+import { FloorPlaneCollision, type FloorPlaneOptions } from './floor-plane';
+
+/**
+ * Synthetic floor for the local hall-3 scene, measured from the leveled splat:
+ * plane fit to the floor gaussians gives y = -1.622 at 0.15 deg tilt (4.5 cm
+ * rms), and the floor's own footprint bounds the rectangle to the interior
+ * walls. Set to null to fall back to voxel-only collision.
+ */
+const WALK_FLOOR_PLANE: FloorPlaneOptions | null = {
+    y: -1.622,
+    minX: -6.5,
+    maxX: 5.0,
+    minZ: -4.0,
+    maxZ: 4.0,
+};
 
 const AnimationPlugin = Animation.AnimationPlugin;
 const AnimationMixer = Animation.AnimationMixer;
@@ -95,6 +111,19 @@ export class VoxelCollision {
         this.treeDepth = metadata.treeDepth;
         this.nodes = nodes;
         this.leafData = leafData;
+    }
+
+    /** Grid layout, for the debug collision overlay in collision-debug.ts. */
+    get gridInfo() {
+        return {
+            minX: this.gridMinX,
+            minY: this.gridMinY,
+            minZ: this.gridMinZ,
+            countX: this.voxelCountX,
+            countY: this.voxelCountY,
+            countZ: this.voxelCountZ,
+            size: this.voxelSize,
+        };
     }
 
     /** Fast point occupancy lookup. */
@@ -559,7 +588,15 @@ export class ViewerWalkMode {
         nodes: Uint32Array,
         leafData: Uint32Array,
     ) {
-        this.collision = new VoxelCollision(metadata, nodes, leafData);
+        // Voxel collision from the scan is disabled: the floor barely voxelizes
+        // and the walls it does produce are not wanted right now. The synthetic
+        // floor plane is the only collider. To bring the scan's geometry back,
+        // pass `new VoxelCollision(metadata, nodes, leafData)` as the first
+        // argument below — FloorPlaneCollision unions the two.
+        void metadata;
+        void nodes;
+        void leafData;
+        this.collision = WALK_FLOOR_PLANE ? new FloorPlaneCollision(undefined, WALK_FLOOR_PLANE) : null;
     }
 
     /** Place the walker at a known position and camera angle. */
@@ -1061,7 +1098,8 @@ export class ViewerWalkMode {
 
 /** Aholo OSS walk assets (`oss-res` -> `node uploader/index.mjs gs:aholo`); indoor `gs_file/room/`, outdoor `gs_file/juguo/`. */
 const AHOLO_OSS_GS_FILE_BASE = 'https://holo-cos.aholo3d.cn/aholo-opensource/gs_file';
-const WALK_INDOOR_URL_PREFIX = `${AHOLO_OSS_GS_FILE_BASE}/room/`;
+/** Unused since indoor moved to the local hall-3 scene; kept for the upstream room assets. */
+void `${AHOLO_OSS_GS_FILE_BASE}/room/`;
 const WALK_OUTDOOR_URL_PREFIX = `${AHOLO_OSS_GS_FILE_BASE}/juguo/`;
 
 /** Third-person GLB assets; tune with `scripts/tune-character-glb-to-walk.mjs`. */
@@ -1809,13 +1847,15 @@ interface WalkDemoScheme {
     pose: WalkDemoInitialPose;
 }
 
+// Spawn for the local hall-3 scene: floor sits near y = -1.25 and the ceiling
+// near y = +2.0, so this drops the capsule into open space just above the floor.
 const WALK_DEMO_INDOOR_POSE: WalkDemoInitialPose = {
-    px: -4.148223469209742,
-    py: 1.0000000000000002,
-    pz: 1.2315243027420304,
-    yaw: -1.7860000000000005,
-    pitch: 0.082,
-    thirdPersonDistance: 3.3999999999999995,
+    px: 0,
+    py: -0.4,
+    pz: 0,
+    yaw: 0,
+    pitch: 0,
+    thirdPersonDistance: 3.4,
 };
 
 const WALK_DEMO_OUTDOOR_POSE: WalkDemoInitialPose = {
@@ -1828,12 +1868,20 @@ const WALK_DEMO_OUTDOOR_POSE: WalkDemoInitialPose = {
 };
 
 const WALK_DEMO_SCHEMES: Record<WalkDemoSchemeId, WalkDemoScheme> = {
+    // Local hall-3 scene. The source Brush export is y-down ("OpenCV -Y", as
+    // src/main.ts documents) but ViewerWalkMode is y-up, so public/splat_hall_3.ply
+    // is the source rotated 180 deg about X. Collision was voxelized from that
+    // same rotated file, so splat and collision cannot drift apart. Regenerate with:
+    //   npx @playcanvas/splat-transform -w -g 0 <src>.ply -N -r 180,0,0 rot.ply
+    //   npx @playcanvas/splat-transform -w -g 0 rot.ply -B -30,-6,-30,30,8,30 \
+    //     --voxel-size 0.06 --voxel-external-fill --seed-pos 0,-0.6,0 \
+    //     public/voxel-hall-3/collision.voxel.json
     indoor: {
         id: 'indoor',
         splatMode: 'files',
-        splatCandidates: [`${WALK_INDOOR_URL_PREFIX}scene.7c26e842.spz`],
-        voxelJson: `${WALK_INDOOR_URL_PREFIX}voxel/10c88df3/collision.voxel-meta.json`,
-        voxelBin: `${WALK_INDOOR_URL_PREFIX}voxel/10c88df3/collision.voxel.bin`,
+        splatCandidates: ['/splat_hall_3.ply'],
+        voxelJson: '/voxel-hall-3/collision.voxel.json',
+        voxelBin: '/voxel-hall-3/collision.voxel.bin',
         pose: WALK_DEMO_INDOOR_POSE,
     },
     outdoor: {
@@ -1959,7 +2007,9 @@ class WalkDemoApp {
         scheme: WalkDemoSchemeId;
         viewMode: WalkViewMode;
         thirdPersonCharacter: WalkThirdPersonCharacterId;
+        showCollision: boolean;
     };
+    private collisionDebug: CollisionDebugOverlay | undefined;
     private scene: WalkDemoScene | undefined;
     private walk: ViewerWalkMode | undefined;
     private running = false;
@@ -1977,6 +2027,8 @@ class WalkDemoApp {
             viewMode: 'third',
             // Changed from the upstream 'man' default.
             thirdPersonCharacter: 'robot',
+            // Debug aid: on by default so collision holes are obvious.
+            showCollision: true,
         };
     }
 
@@ -2016,6 +2068,9 @@ class WalkDemoApp {
             .on('change', () => {
                 void this.swapThirdPersonCharacter();
             });
+        pane.addBinding(this.params, 'showCollision', { label: 'Show collision' }).on('change', () => {
+            this.collisionDebug?.setVisible(this.params.showCollision);
+        });
         pane.addBinding(this.params, 'viewMode', {
             label: ui.viewLabel,
             options: { [ui.first]: 'first', [ui.third]: 'third' },
@@ -2144,6 +2199,8 @@ class WalkDemoApp {
         const scheme = WALK_DEMO_SCHEMES[this.params.scheme];
 
         this.running = false;
+        this.collisionDebug?.dispose();
+        this.collisionDebug = undefined;
         this.walk?.disable();
         this.walk = undefined;
         this.scene?.dispose();
@@ -2223,6 +2280,10 @@ class WalkDemoApp {
                 return;
             }
 
+            // Already disposed at the top of this method.
+            this.collisionDebug = new CollisionDebugOverlay(this.ctx.renderer.scene, WALK_FLOOR_PLANE);
+            this.collisionDebug.setVisible(this.params.showCollision);
+
             this.ctx.renderer.resize();
             this.running = true;
             this.hideLoadingOnFrame = true;
@@ -2295,6 +2356,8 @@ class WalkDemoApp {
         this.reloadAbort = undefined;
         this.reloadGeneration += 1;
         this.running = false;
+        this.collisionDebug?.dispose();
+        this.collisionDebug = undefined;
         this.walk?.disable();
         this.walk = undefined;
         this.scene?.dispose();
