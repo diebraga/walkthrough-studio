@@ -79,6 +79,37 @@ export function devEnabled(flag: DevFlag): boolean {
     return import.meta.env.DEV && active.has(flag);
 }
 
+const TOGGLE_KEY = 'walkthrough-studio:dev-toggles';
+
+function readToggles(): Record<string, boolean> {
+    try {
+        const raw = localStorage.getItem(TOGGLE_KEY);
+        return raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
+    } catch {
+        return {};
+    }
+}
+
+/**
+ * Remembered state of an individual debug toggle, separate from the flags above:
+ * a flag decides whether a control EXISTS, a toggle whether it is currently on.
+ * Both default off so a reload never surprises you with a scene full of debug
+ * geometry — you turn a view on when you want it, and it stays on until you say
+ * otherwise.
+ */
+export function readDevToggle(name: string, fallback = false): boolean {
+    const stored = readToggles()[name];
+    return typeof stored === 'boolean' ? stored : fallback;
+}
+
+export function writeDevToggle(name: string, value: boolean): void {
+    try {
+        localStorage.setItem(TOGGLE_KEY, JSON.stringify({ ...readToggles(), [name]: value }));
+    } catch {
+        // Private browsing; the toggle still works for this session.
+    }
+}
+
 /** Flags currently on, for logging what is active at startup. */
 export function activeDevFlags(): DevFlag[] {
     return ALL_FLAGS.filter((f) => devEnabled(f));

@@ -34,7 +34,7 @@ import {
 } from '@manycore/aholo-viewer';
 import type { Scene3D, Viewer } from '@manycore/aholo-viewer';
 import { CollisionDebugOverlay } from './collision-debug';
-import { activeDevFlags, devEnabled } from './dev-settings';
+import { activeDevFlags, devEnabled, readDevToggle, writeDevToggle } from './dev-settings';
 import {
     createPortal,
     loadPortals,
@@ -514,6 +514,23 @@ export interface ViewerWalkCharacterState {
     walkSpeed: number;
     verticalVelocity: number;
     grounded: boolean;
+}
+
+/**
+ * True when the event is going to a field the user is typing into. Key handling
+ * listens on `document`, so without this the walk controller eats keystrokes
+ * meant for a text input — and worse, it calls preventDefault() on WASD, so you
+ * cannot type those letters at all.
+ */
+function isTypingTarget(target: EventTarget | null): boolean {
+    if (!(target instanceof HTMLElement)) {
+        return false;
+    }
+    if (target.isContentEditable) {
+        return true;
+    }
+    const tag = target.tagName;
+    return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
 }
 
 /** Walk controller: voxel collision in, camera and character state out. */
@@ -1022,7 +1039,7 @@ export class ViewerWalkMode {
     }
 
     private onKeyDown = (e: KeyboardEvent) => {
-        if (!this.enabled) {
+        if (!this.enabled || isTypingTarget(e.target)) {
             return;
         }
         this.keys[e.code] = true;
@@ -1035,11 +1052,21 @@ export class ViewerWalkMode {
         if (!this.enabled) {
             return;
         }
+        // Deliberately NOT filtered by isTypingTarget: a release must always be
+        // recorded. Pressing a key over the canvas and releasing it after focus
+        // moved into a field would otherwise leave that key stuck down forever.
         this.keys[e.code] = false;
     };
 
     // Clear held keys when the user leaves the walk area or the page loses focus.
     private onDocumentPointerDown = (e: PointerEvent) => {
+        // Clicking back into the scene has to hand keyboard control back to the
+        // walker. A canvas is not focusable, so clicking it does not blur a text
+        // field — focus would stay in the panel and isTypingTarget would keep
+        // swallowing WASD even though the user is clearly done typing.
+        if (e.target instanceof Node && this.container.contains(e.target) && isTypingTarget(document.activeElement)) {
+            (document.activeElement as HTMLElement).blur();
+        }
         this.clearInputWhenTargetLeavesContainer(e.target);
     };
 
@@ -2099,6 +2126,7 @@ class WalkDemoApp {
         viewMode: WalkViewMode;
         thirdPersonCharacter: WalkThirdPersonCharacterId;
         showCollision: boolean;
+        showPortals: boolean;
         portalName: string;
         portalStatus: string;
         insidePortal: string;
@@ -2124,8 +2152,12 @@ class WalkDemoApp {
             viewMode: 'third',
             // Changed from the upstream 'man' default.
             thirdPersonCharacter: 'robot',
-            // Developer setting; off unless the 'collision' dev flag is set.
-            showCollision: devEnabled('collision'),
+            // Debug views default OFF and remember their last state, so a reload
+            // never drops you into a scene full of debug geometry.
+            showCollision: readDevToggle('showCollision'),
+            // Separate from showCollision on purpose: the common case while
+            // authoring is markers on with the collision overlay off.
+            showPortals: readDevToggle('showPortals'),
             portalName: '',
             portalStatus: '-',
             insidePortal: '-',
@@ -2176,6 +2208,7 @@ class WalkDemoApp {
         // docs/dev-settings.md.
         if (devEnabled('collision')) {
             pane.addBinding(this.params, 'showCollision', { label: 'Show collision' }).on('change', () => {
+                writeDevToggle('showCollision', this.params.showCollision);
                 this.collisionDebug?.setVisible(this.params.showCollision);
             });
         }
@@ -2202,6 +2235,10 @@ class WalkDemoApp {
     /** Capture UI plus the per-portal list. Developer setting only. */
     private mountPortalPanel(pane: Pane): void {
         const folder = pane.addFolder({ title: 'Portals' });
+        folder.addBinding(this.params, 'showPortals', { label: 'Show portals' }).on('change', () => {
+            writeDevToggle('showPortals', this.params.showPortals);
+            this.collisionDebug?.setPortalsVisible(this.params.showPortals);
+        });
         folder.addBinding(this.params, 'portalName', { label: 'Name' });
         folder.addButton({ title: 'Add portal here' }).on('click', () => {
             void this.capturePortal();
@@ -2508,6 +2545,7 @@ class WalkDemoApp {
             // Already disposed at the top of this method.
             this.collisionDebug = new CollisionDebugOverlay(this.ctx.renderer.scene);
             this.collisionDebug.setVisible(this.params.showCollision);
+            this.collisionDebug.setPortalsVisible(this.params.showPortals);
 
             this.ctx.renderer.resize();
             this.running = true;

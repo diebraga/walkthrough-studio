@@ -24,6 +24,14 @@ Override per-tab with a query param, which is then remembered in `localStorage`:
 /test?dev=0                     everything off, ignoring the .env default
 ```
 
+### Flags vs toggles
+
+A **flag** decides whether a control exists; a **toggle** is the checkbox itself.
+Enabling the `collision` flag adds *Show collision* to the panel — it does not
+turn the overlay on. Both toggles default **off** and remember their last state
+in `localStorage`, so a reload never drops you into a scene full of debug
+geometry, and a view you turned on stays on.
+
 Resolved in precedence order: **query param → localStorage → `.env`**. So
 `?dev=0` lets you see the app exactly as a visitor would without editing a file,
 and it sticks until you pass `?dev=` again. Active flags are logged at startup.
@@ -58,6 +66,7 @@ Adds a **Portals** folder for capturing named points while walking the scene.
 
 | Control | Does |
 |---|---|
+| Show portals | Draws the markers; separate from *Show collision* because the usual case while authoring is markers on, collision off |
 | Name | Name for the next capture; blank auto-increments `portal_1`, `portal_2` |
 | Add portal here | Captures the walker's current position and yaw |
 | saved | Time of the last successful write, or the error |

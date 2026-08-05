@@ -79,6 +79,7 @@ export class CollisionDebugOverlay {
     private mesh: InstanceType<typeof Mesh> | undefined;
     private portalMesh: InstanceType<typeof Mesh> | undefined;
     private portalKey = '';
+    private portalsVisible = true;
     private lastCenter: { x: number; z: number } | undefined;
     private visible = false;
 
@@ -153,6 +154,13 @@ export class CollisionDebugOverlay {
      * trigger area is visible on the floor without hiding the scene. The one you
      * are standing in turns yellow, which is faster to read than the console.
      */
+    setPortalsVisible(visible: boolean): void {
+        this.portalsVisible = visible;
+        for (const m of [this.portalMesh, this.portalExtra]) {
+            if (m) m.visible = visible;
+        }
+    }
+
     updatePortals(portals: readonly Portal[], activeName: string | undefined, floorY: number): void {
         const key = `${activeName ?? ''}|${portals.map((p) => `${p.name}:${p.position.x.toFixed(2)}:${p.position.z.toFixed(2)}:${p.radius}`).join('|')}`;
         if (key === this.portalKey) {
@@ -198,6 +206,7 @@ export class CollisionDebugOverlay {
             g.setAttribute('position', new BufferAttribute(new Float32Array(pos), 3));
             g.setAttribute('normal', new BufferAttribute(new Float32Array(nrm), 3));
             const m = new Mesh(g as never, new MeshPhongMaterial({ color: colour, side: Side.DoubleSide }));
+            m.visible = this.portalsVisible;
             this.scene.add(m as never);
             return m;
         };
