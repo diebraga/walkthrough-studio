@@ -52,6 +52,7 @@ import {
 import { resolvePortalTeleport, type TeleportPose } from './teleport';
 import { flyVector } from './fly-mode';
 import { mobileJoystickInput } from './mobile-joystick';
+import { clampPitch, nextLookAngles } from './walk-look';
 import { formatDeveloperPose } from './dev-position';
 import { splatUrl } from './asset-url';
 import { FloorPlaneCollision, type FloorPlaneOptions } from './floor-plane';
@@ -561,6 +562,7 @@ export class ViewerWalkMode {
     private enabled = false;
     private keys: Record<string, boolean> = {};
     private touchMove = { forward: 0, strafe: 0 };
+    private touchLook: { pointerId: number; x: number; y: number } | undefined;
     private mouseLookDragging = false;
 
     private yaw = 0;
@@ -611,6 +613,10 @@ export class ViewerWalkMode {
         document.addEventListener('mousedown', this.onMouseDown);
         document.addEventListener('mouseup', this.onMouseUp);
         document.addEventListener('mousemove', this.onMouseMove);
+        this.container.addEventListener('pointerdown', this.onTouchLookPointerDown);
+        document.addEventListener('pointermove', this.onTouchLookPointerMove);
+        document.addEventListener('pointerup', this.onTouchLookPointerUp);
+        document.addEventListener('pointercancel', this.onTouchLookPointerUp);
         document.addEventListener('wheel', this.onWheel, { passive: false });
         // Prevent "stuck key" drift when keyup is lost (UI panel focus, pointer-lock, tab blur).
         document.addEventListener('pointerdown', this.onDocumentPointerDown, true);
@@ -664,7 +670,7 @@ export class ViewerWalkMode {
         this.position.copy(position);
         this.velocity.set(0, 0, 0);
         this.yaw = yaw;
-        this.pitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, pitch));
+        this.pitch = clampPitch(pitch);
         this.activateAtCurrentPose(options.snapToGround !== false);
     }
 
@@ -699,6 +705,24 @@ export class ViewerWalkMode {
     disable() {
         this.enabled = false;
         this.clearInputState();
+    }
+
+    dispose() {
+        this.disable();
+        document.removeEventListener('keydown', this.onKeyDown);
+        document.removeEventListener('keyup', this.onKeyUp);
+        document.removeEventListener('mousedown', this.onMouseDown);
+        document.removeEventListener('mouseup', this.onMouseUp);
+        document.removeEventListener('mousemove', this.onMouseMove);
+        this.container.removeEventListener('pointerdown', this.onTouchLookPointerDown);
+        document.removeEventListener('pointermove', this.onTouchLookPointerMove);
+        document.removeEventListener('pointerup', this.onTouchLookPointerUp);
+        document.removeEventListener('pointercancel', this.onTouchLookPointerUp);
+        document.removeEventListener('wheel', this.onWheel);
+        document.removeEventListener('pointerdown', this.onDocumentPointerDown, true);
+        document.removeEventListener('focusin', this.onDocumentFocusIn, true);
+        window.removeEventListener('blur', this.onWindowBlur);
+        document.removeEventListener('visibilitychange', this.onVisibilityChange);
     }
 
     /** Mobile analog stick input, normalized to the same range as WASD. */
@@ -1159,6 +1183,7 @@ export class ViewerWalkMode {
     private clearInputState() {
         this.keys = {};
         this.setTouchMove(0, 0);
+        this.touchLook = undefined;
         this.mouseLookDragging = false;
     }
 
@@ -1189,11 +1214,45 @@ export class ViewerWalkMode {
             this.mouseLookDragging = false;
             return;
         }
-        const sensitivity = 0.002;
-        this.yaw -= e.movementX * sensitivity;
-        this.pitch += (this.thirdPersonEnabled ? 1 : -1) * e.movementY * sensitivity;
-        this.pitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, this.pitch));
+        this.applyLookDelta(e.movementX, e.movementY);
     };
+
+    private onTouchLookPointerDown = (e: PointerEvent) => {
+        if (!this.enabled || e.pointerType === 'mouse' || e.clientX < window.innerWidth * 0.35) {
+            return;
+        }
+        this.touchLook = { pointerId: e.pointerId, x: e.clientX, y: e.clientY };
+        this.container.setPointerCapture(e.pointerId);
+        e.preventDefault();
+    };
+
+    private onTouchLookPointerMove = (e: PointerEvent) => {
+        if (!this.enabled || this.touchLook?.pointerId !== e.pointerId) {
+            return;
+        }
+        this.applyLookDelta(e.clientX - this.touchLook.x, e.clientY - this.touchLook.y);
+        this.touchLook.x = e.clientX;
+        this.touchLook.y = e.clientY;
+        e.preventDefault();
+    };
+
+    private onTouchLookPointerUp = (e: PointerEvent) => {
+        if (this.touchLook?.pointerId === e.pointerId) {
+            this.touchLook = undefined;
+        }
+    };
+
+    private applyLookDelta(dx: number, dy: number) {
+        const look = nextLookAngles({
+            yaw: this.yaw,
+            pitch: this.pitch,
+            dx,
+            dy,
+            thirdPerson: this.thirdPersonEnabled,
+        });
+        this.yaw = look.yaw;
+        this.pitch = look.pitch;
+    }
 
     private onWheel = (e: WheelEvent) => {
         if (!this.enabled || !this.thirdPersonEnabled) {
@@ -2688,7 +2747,7 @@ class WalkDemoApp {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.55);
   transform: translate(-50%, -50%);
 }
-@media (hover: none) and (pointer: coarse) and (orientation: landscape) {
+@media (orientation: landscape) and (any-pointer: coarse), (orientation: landscape) and (max-width: 1180px) {
   .walk-mobile-joystick { display: block; }
 }`;
         const joystick = document.createElement('div');
@@ -2889,7 +2948,7 @@ class WalkDemoApp {
         this.running = false;
         this.collisionDebug?.dispose();
         this.collisionDebug = undefined;
-        this.walk?.disable();
+        this.walk?.dispose();
         this.walk = undefined;
         this.scene?.dispose();
         this.scene = undefined;
@@ -3081,7 +3140,7 @@ class WalkDemoApp {
         this.running = false;
         this.collisionDebug?.dispose();
         this.collisionDebug = undefined;
-        this.walk?.disable();
+        this.walk?.dispose();
         this.walk = undefined;
         this.scene?.dispose();
         this.scene = undefined;
