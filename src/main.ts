@@ -35,6 +35,10 @@ const VOXEL_BIN_URL = "/voxel-hall-2/voxel.bin";
 // (Mixamo-rigged, per the "mixamo.com" clip fallback in setupActions below),
 // so it shares the robot's scale/upright constants below.
 const ROBOT_MODEL_URL = "https://holo-cos.aholo3d.cn/aholo-opensource/gs_file/misc/robot.0765006a.glb";
+// KNOWN BROKEN: this GLB downloads fine (HTTP 200) but aholo-viewer's GLTF
+// texture loader never resolves its 9 texture promises, so the model never
+// appears. Bug is in the library, not here — kept selectable so it starts
+// working the day aholo-viewer is fixed.
 const MAN_MODEL_URL = "https://holo-cos.aholo3d.cn/aholo-opensource/gs_file/misc/man-final.755ce8ea.glb";
 const THIRD_PERSON_DISTANCE = 3.2;
 const THIRD_PERSON_HEIGHT = 0.35;
