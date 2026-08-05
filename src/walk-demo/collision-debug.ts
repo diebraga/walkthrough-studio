@@ -1,9 +1,14 @@
 /**
- * Debug overlay: draws the active collider as a solid volume so you can see
- * where it actually is, and how it sits relative to the splat's floor.
+ * Debug overlay: draws the active collider as solid volumes rather than points,
+ * so you can see exactly what is blocking you.
  *
- * Only the synthetic floor plane is drawn, because it is the only collider in
- * use — the scan's voxel field is disabled (see walk-demo.ts loadVoxelCollision).
+ * Both colliders are drawn, because both are live:
+ *   floor — one slab across the walkable region
+ *   walls — the grid cells that are NOT walkable, extruded to wall height
+ *
+ * Only cells on the BOUNDARY of the walkable region are drawn. The non-walkable
+ * set includes everything outside the room too, which would enclose the camera
+ * in a solid pink shell.
  */
 import {
     BufferAttribute,
@@ -13,20 +18,29 @@ import {
     Side,
     type Scene3D,
 } from '@manycore/aholo-viewer';
-import type { FloorPlaneOptions } from './floor-plane';
+import type { GridCollision } from './grid-collision';
 
 /** Drawn thickness of the floor slab. Purely visual; the collider is a half-space. */
-const SLAB_THICKNESS = 0.12;
+const SLAB = 0.1;
+/** How tall to draw wall cells. Shorter than the collider so the view stays open. */
+const WALL_DRAW_HEIGHT = 1.6;
+/** Half-size of the region drawn around the player, in metres. */
+const EXTENT = 9;
+/** Rebuild once the player has moved this far from the last centre. */
+const REBUILD_DISTANCE = 2;
+const PINK = 0xff3ea5;
 
-/** Two triangles per face, 6 faces, with outward normals. */
-function boxGeometry(
+/** Append one axis-aligned box (12 triangles, outward normals) to the buffers. */
+function pushBox(
+    positions: number[],
+    normals: number[],
     minX: number,
     minY: number,
     minZ: number,
     maxX: number,
     maxY: number,
     maxZ: number,
-): InstanceType<typeof BufferGeometry> {
+): void {
     const v = [
         [minX, minY, minZ],
         [maxX, minY, minZ],
@@ -38,16 +52,13 @@ function boxGeometry(
         [minX, maxY, maxZ],
     ];
     const faces: [number[], number[]][] = [
-        [[4, 5, 6, 7], [0, 0, 1]], // +Z
-        [[1, 0, 3, 2], [0, 0, -1]], // -Z
-        [[3, 2, 6, 7], [0, 1, 0]], // +Y (top — the walkable surface)
-        [[0, 1, 5, 4], [0, -1, 0]], // -Y
-        [[1, 5, 6, 2], [1, 0, 0]], // +X
-        [[4, 0, 3, 7], [-1, 0, 0]], // -X
+        [[4, 5, 6, 7], [0, 0, 1]],
+        [[1, 0, 3, 2], [0, 0, -1]],
+        [[3, 2, 6, 7], [0, 1, 0]],
+        [[0, 1, 5, 4], [0, -1, 0]],
+        [[1, 5, 6, 2], [1, 0, 0]],
+        [[4, 0, 3, 7], [-1, 0, 0]],
     ];
-
-    const positions: number[] = [];
-    const normals: number[] = [];
     for (const [quad, n] of faces) {
         const [a, b, c, d] = quad as [number, number, number, number];
         for (const i of [a, b, c, a, c, d]) {
@@ -55,38 +66,76 @@ function boxGeometry(
             normals.push(n[0]!, n[1]!, n[2]!);
         }
     }
-
-    const geometry = new BufferGeometry();
-    geometry.setAttribute('position', new BufferAttribute(new Float32Array(positions), 3));
-    geometry.setAttribute('normal', new BufferAttribute(new Float32Array(normals), 3));
-    return geometry;
 }
 
 export class CollisionDebugOverlay {
     private readonly scene: Scene3D;
     private mesh: InstanceType<typeof Mesh> | undefined;
+    private lastCenter: { x: number; z: number } | undefined;
     private visible = false;
 
-    constructor(scene: Scene3D, floor: FloorPlaneOptions | null) {
+    constructor(scene: Scene3D) {
         this.scene = scene;
-        if (floor) {
-            this.build(floor);
-        }
     }
 
-    private build(floor: FloorPlaneOptions): void {
-        const geometry = boxGeometry(
-            floor.minX,
-            floor.y - SLAB_THICKNESS,
-            floor.minZ,
-            floor.maxX,
-            floor.y,
-            floor.maxZ,
-        );
-        const material = new MeshPhongMaterial({ color: 0x00ff66, side: Side.DoubleSide });
-        this.mesh = new Mesh(geometry as never, material);
-        this.mesh.visible = this.visible;
-        this.scene.add(this.mesh as never);
+    /** Rebuild the volumes when the player has moved far enough. */
+    update(grid: GridCollision | undefined, x: number, z: number): void {
+        if (!this.visible || !grid) {
+            return;
+        }
+        const c = this.lastCenter;
+        if (c && Math.hypot(x - c.x, z - c.z) < REBUILD_DISTANCE) {
+            return;
+        }
+        this.lastCenter = { x, z };
+        this.rebuild(grid, x, z);
+    }
+
+    private rebuild(grid: GridCollision, cx: number, cz: number): void {
+        const { nx, nz } = grid.dims;
+        const clamp = (v: number, hi: number) => Math.max(0, Math.min(hi - 1, v));
+        const x0 = clamp(grid.cellX(cx - EXTENT), nx);
+        const x1 = clamp(grid.cellX(cx + EXTENT), nx);
+        const z0 = clamp(grid.cellZ(cz - EXTENT), nz);
+        const z1 = clamp(grid.cellZ(cz + EXTENT), nz);
+
+        const positions: number[] = [];
+        const normals: number[] = [];
+        const floorY = grid.floorY;
+        const wallTop = Math.min(grid.wallTop, floorY + WALL_DRAW_HEIGHT);
+
+        for (let gx = x0; gx <= x1; gx++) {
+            for (let gz = z0; gz <= z1; gz++) {
+                const b = grid.cellBounds(gx, gz);
+                if (grid.isWalkableCell(gx, gz)) {
+                    // Floor tile under the walkable cell.
+                    pushBox(positions, normals, b.x0, floorY - SLAB, b.z0, b.x1, floorY, b.z1);
+                    continue;
+                }
+                // Wall, but only where it borders somewhere you can stand —
+                // otherwise the whole outside of the room turns into solid pink.
+                const border =
+                    grid.isWalkableCell(gx - 1, gz) ||
+                    grid.isWalkableCell(gx + 1, gz) ||
+                    grid.isWalkableCell(gx, gz - 1) ||
+                    grid.isWalkableCell(gx, gz + 1);
+                if (border) {
+                    pushBox(positions, normals, b.x0, floorY, b.z0, b.x1, wallTop, b.z1);
+                }
+            }
+        }
+
+        this.dispose();
+        if (positions.length === 0) {
+            return;
+        }
+        const geometry = new BufferGeometry();
+        geometry.setAttribute('position', new BufferAttribute(new Float32Array(positions), 3));
+        geometry.setAttribute('normal', new BufferAttribute(new Float32Array(normals), 3));
+        const mesh = new Mesh(geometry as never, new MeshPhongMaterial({ color: PINK, side: Side.DoubleSide }));
+        mesh.visible = this.visible;
+        this.scene.add(mesh as never);
+        this.mesh = mesh;
     }
 
     setVisible(visible: boolean): void {
@@ -94,14 +143,15 @@ export class CollisionDebugOverlay {
         if (this.mesh) {
             this.mesh.visible = visible;
         }
+        if (!visible) {
+            // Force a rebuild next time it is switched on, so it re-centres.
+            this.lastCenter = undefined;
+        }
     }
 
     dispose(): void {
-        if (!this.mesh) {
-            return;
-        }
-        this.mesh.removeFromParent?.();
-        this.mesh.freeAllGpuResourceOwned?.();
+        this.mesh?.removeFromParent?.();
+        this.mesh?.freeAllGpuResourceOwned?.();
         this.mesh = undefined;
     }
 }

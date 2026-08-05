@@ -33,6 +33,7 @@ import {
 import type { Scene3D, Viewer } from '@manycore/aholo-viewer';
 import { CollisionDebugOverlay } from './collision-debug';
 import { FloorPlaneCollision, type FloorPlaneOptions } from './floor-plane';
+import { GridCollision, type CollisionGridData } from './grid-collision';
 
 /**
  * Synthetic floor for the local hall-3 scene, measured from the leveled splat:
@@ -597,6 +598,24 @@ export class ViewerWalkMode {
         void nodes;
         void leafData;
         this.collision = WALK_FLOOR_PLANE ? new FloorPlaneCollision(undefined, WALK_FLOOR_PLANE) : null;
+    }
+
+    /**
+     * Attach a baked walkable grid (tools/build-collision.mjs). This supplies
+     * BOTH colliders: the floor plane and the wall cells, so it replaces the
+     * voxel field entirely rather than being unioned with it.
+     */
+    loadCollisionGrid(data: CollisionGridData) {
+        const grid = new GridCollision(data);
+        this.grid = grid;
+        this.collision = grid;
+    }
+
+    private grid: GridCollision | undefined;
+
+    /** The baked grid, for the debug overlay. */
+    get collisionGrid(): GridCollision | undefined {
+        return this.grid;
     }
 
     /** Place the walker at a known position and camera angle. */
@@ -1844,6 +1863,8 @@ interface WalkDemoScheme {
     lodMetaUrl?: string;
     voxelJson?: string;
     voxelBin?: string;
+    /** Baked walkable grid; when set it supersedes voxelJson/voxelBin. */
+    collisionGrid?: string;
     pose: WalkDemoInitialPose;
 }
 
@@ -1880,8 +1901,8 @@ const WALK_DEMO_SCHEMES: Record<WalkDemoSchemeId, WalkDemoScheme> = {
         id: 'indoor',
         splatMode: 'files',
         splatCandidates: ['/splat_hall_3.ply'],
-        voxelJson: '/voxel-hall-3/collision.voxel.json',
-        voxelBin: '/voxel-hall-3/collision.voxel.bin',
+        // Baked by tools/build-collision.mjs; supplies floor AND walls.
+        collisionGrid: '/collision-hall-3/collision.json',
         pose: WALK_DEMO_INDOOR_POSE,
     },
     outdoor: {
@@ -2178,6 +2199,8 @@ class WalkDemoApp {
             sceneLoop.updateThirdPersonCharacter(walkLoop.getCharacterState(), delta);
         }
         sceneLoop.setThirdPersonEnabled(showAvatar);
+        const walker = walkLoop.getCharacterState().position;
+        this.collisionDebug?.update(walkLoop.collisionGrid, walker.x, walker.z);
         sceneLoop.updateCamera(walkLoop.getCameraState());
         if (scheme.splatMode === 'lod') {
             sceneLoop.tickLod();
@@ -2281,7 +2304,7 @@ class WalkDemoApp {
             }
 
             // Already disposed at the top of this method.
-            this.collisionDebug = new CollisionDebugOverlay(this.ctx.renderer.scene, WALK_FLOOR_PLANE);
+            this.collisionDebug = new CollisionDebugOverlay(this.ctx.renderer.scene);
             this.collisionDebug.setVisible(this.params.showCollision);
 
             this.ctx.renderer.resize();
@@ -2305,6 +2328,20 @@ class WalkDemoApp {
 
     /** Load voxel collision data if the scene provides it. */
     private async tryLoadCollision(walk: ViewerWalkMode, scheme: WalkDemoScheme, signal: AbortSignal): Promise<void> {
+        // A baked walkable grid provides floor and walls together, so it wins
+        // over the voxel pair when present.
+        if (scheme.collisionGrid) {
+            const res = await fetch(scheme.collisionGrid, { signal });
+            if (!res.ok) {
+                console.warn(`[walk] Collision grid not OK (${res.status}); walking without collision.`);
+                return;
+            }
+            const text = await res.text();
+            throwIfAborted(signal);
+            walk.loadCollisionGrid(JSON.parse(text) as CollisionGridData);
+            return;
+        }
+
         const jsonUrl = scheme.voxelJson;
         const binUrl = scheme.voxelBin;
         if (jsonUrl && binUrl) {
