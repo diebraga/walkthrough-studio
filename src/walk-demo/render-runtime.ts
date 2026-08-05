@@ -112,15 +112,24 @@ function createIndexedDBStorage(dbName: string): RuntimeIndexedDBStorage {
   };
 }
 
+/**
+ * Overlays mount on document.body, never inside the viewer's canvas container.
+ * ViewerWalkMode calls preventDefault() on any mousedown landing inside that
+ * container (walk-demo.ts onMouseDown), which stops a native <select> from
+ * opening — so the panel has to live outside it, as it does upstream.
+ */
+const OVERLAY_ROOT = document.body;
+
 /** Loading overlay matching the playground's "show while a scene loads" behaviour. */
-function createLoading(container: HTMLElement): RuntimeLoadingController {
+function createLoading(): RuntimeLoadingController & { el: HTMLElement } {
   const el = document.createElement("div");
   el.style.cssText =
-    "position:absolute;inset:0;display:none;align-items:center;justify-content:center;" +
+    "position:fixed;inset:0;display:none;align-items:center;justify-content:center;" +
     "color:#eee;font:14px/1 system-ui,sans-serif;background:rgba(0,0,0,.6);z-index:1";
   el.textContent = "Loading…";
-  container.append(el);
+  OVERLAY_ROOT.append(el);
   return {
+    el,
     show(label) {
       el.textContent = label ?? "Loading…";
       el.style.display = "flex";
@@ -131,10 +140,10 @@ function createLoading(container: HTMLElement): RuntimeLoadingController {
   };
 }
 
-function createConfigPanel(container: HTMLElement): RuntimeConfigPanel {
+function createConfigPanel(): RuntimeConfigPanel {
   const host = document.createElement("div");
-  host.style.cssText = "position:absolute;top:12px;right:12px;width:260px;z-index:2";
-  container.append(host);
+  host.style.cssText = "position:fixed;top:12px;right:12px;width:260px;z-index:2";
+  OVERLAY_ROOT.append(host);
   const panes: Pane[] = [];
   return {
     available: true,
@@ -221,11 +230,14 @@ export function createRenderRuntime(container: HTMLElement): RenderRuntime & { d
   const resizeObserver = new ResizeObserver(onResize);
   resizeObserver.observe(container);
 
+  const loading = createLoading();
+  const configPanel = createConfigPanel();
+
   return {
     renderer,
     control,
-    loading: createLoading(container),
-    configPanel: createConfigPanel(container),
+    loading,
+    configPanel,
     indexedDB: createIndexedDBStorage("walk-demo-cache"),
     signal: abort.signal,
     dispose() {
@@ -233,6 +245,9 @@ export function createRenderRuntime(container: HTMLElement): RenderRuntime & { d
       cancelAnimationFrame(rafId);
       window.removeEventListener("resize", onResize);
       resizeObserver.disconnect();
+      configPanel.clear();
+      loading.el.remove();
+      configPanel.container.remove();
     },
   };
 }

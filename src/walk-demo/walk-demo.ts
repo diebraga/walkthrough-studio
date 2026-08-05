@@ -514,6 +514,14 @@ export class ViewerWalkMode {
     moveSpeed = 7;
 
     thirdPersonEnabled = false;
+    /**
+     * 0 = first-person, 1 = third-person. Eases between the two instead of
+     * cutting, so toggling the camera dollies out/in. Read by the demo shell to
+     * keep the avatar hidden until the camera has actually left the head.
+     */
+    viewBlend = 0;
+    /** Seconds for a full first <-> third camera transition. */
+    viewBlendSeconds = 0.45;
     private thirdPersonDistance = 3.2;
     private thirdPersonDistanceTarget = 3.2;
     private thirdPersonDistanceMin = 0.8;
@@ -616,12 +624,43 @@ export class ViewerWalkMode {
             this.accumulator -= WALK_SIMULATION_STEP_SECONDS;
         }
         this.updateCharacterPosition();
-        if (this.thirdPersonEnabled) {
-            this.updateThirdPersonCamera(dtClamped);
-        } else {
+        this.updateViewBlend(dtClamped);
+
+        if (this.viewBlend <= 0) {
             this.cameraPosition.set(this.position.x, this.position.y, this.position.z);
             this.cameraRotation.set(this.pitch, this.yaw, 0, 'YXZ');
+            return;
         }
+
+        // Fills cameraPosition/cameraRotation with the full third-person pose.
+        this.updateThirdPersonCamera(dtClamped);
+        if (this.viewBlend >= 1) {
+            return;
+        }
+
+        // Mid-transition: ease that pose back toward the first-person one. Both
+        // share yaw and have zero roll, so pitch is a plain scalar blend — no
+        // quaternion handling needed.
+        const t = this.viewBlend * this.viewBlend * (3 - 2 * this.viewBlend);
+        this.cameraPosition.set(
+            this.lerp(this.position.x, this.cameraPosition.x, t),
+            this.lerp(this.position.y, this.cameraPosition.y, t),
+            this.lerp(this.position.z, this.cameraPosition.z, t),
+        );
+        this.cameraRotation.set(this.lerp(this.pitch, this.cameraRotation.x, t), this.yaw, 0, 'YXZ');
+    }
+
+    /** Ease viewBlend toward whichever mode is selected. */
+    private updateViewBlend(dt: number) {
+        const target = this.thirdPersonEnabled ? 1 : 0;
+        if (this.viewBlend === target) {
+            return;
+        }
+        const step = dt / Math.max(1e-3, this.viewBlendSeconds);
+        this.viewBlend =
+            target > this.viewBlend
+                ? Math.min(target, this.viewBlend + step)
+                : Math.max(target, this.viewBlend - step);
     }
 
     /** Current camera transform for the render scene. */
@@ -1936,7 +1975,8 @@ class WalkDemoApp {
         this.params = {
             scheme: 'indoor',
             viewMode: 'third',
-            thirdPersonCharacter: 'man',
+            // Changed from the upstream 'man' default.
+            thirdPersonCharacter: 'robot',
         };
     }
 
@@ -1955,11 +1995,16 @@ class WalkDemoApp {
         }
         const ui = getWalkDemoUiStrings();
         const pane = this.ctx.configPanel.createPane({ title: ui.paneTitle });
+        // Outdoor is intentionally left out of the options: only indoor is
+        // wanted for now. The 'outdoor' scheme itself still exists in
+        // WALK_DEMO_SCHEMES, so re-adding it here is all it takes to bring back.
         pane.addBinding(this.params, 'scheme', {
             label: ui.schemeLabel,
-            options: { [ui.schemeIndoor]: 'indoor', [ui.schemeOutdoor]: 'outdoor' },
+            options: { [ui.schemeIndoor]: 'indoor' },
         }).on('change', () => {
-            this.params.thirdPersonCharacter = this.params.scheme === 'outdoor' ? 'robot' : 'man';
+            // Upstream forced 'man' for indoor / 'robot' for outdoor here, which
+            // would undo the robot default on the first scene switch. Keep
+            // whatever character is selected instead.
             this.thirdPersonCharacterBinding?.refresh();
             void this.queueReloadScene();
         });
@@ -2041,7 +2086,9 @@ class WalkDemoApp {
         walk.thirdPersonCameraPreset = this.params.scheme === 'outdoor' ? 'outdoor' : 'indoor';
         const indoorSpeed = third ? 1.35 : 2.7;
         walk.moveSpeed = this.params.scheme === 'outdoor' ? 2.15 : indoorSpeed;
-        scene.setThirdPersonEnabled(third);
+        // Avatar visibility is owned by onFrame, which keeps it on until the
+        // camera has blended away from the head — hiding it here would pop.
+        void scene;
     }
 
     /** Serialize scene reloads so rapid UI changes do not overlap. */
@@ -2068,9 +2115,14 @@ class WalkDemoApp {
         }
         const scheme = WALK_DEMO_SCHEMES[this.params.scheme];
         walkLoop.update(delta);
-        if (this.params.viewMode === 'third') {
+        // Keep the avatar alive for the whole transition, not just while
+        // third-person is selected, so it animates as the camera pulls away and
+        // only disappears once the camera is back inside the head.
+        const showAvatar = walkLoop.viewBlend > 0.02;
+        if (showAvatar) {
             sceneLoop.updateThirdPersonCharacter(walkLoop.getCharacterState(), delta);
         }
+        sceneLoop.setThirdPersonEnabled(showAvatar);
         sceneLoop.updateCamera(walkLoop.getCameraState());
         if (scheme.splatMode === 'lod') {
             sceneLoop.tickLod();
