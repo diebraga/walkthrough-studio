@@ -23,6 +23,7 @@ import {
     GLTFLoader,
     Object3D,
     PerspectiveCamera,
+    Quaternion,
     setViewerConfig,
     SplatUtils,
     Vector3,
@@ -1116,6 +1117,15 @@ export class ViewerWalkMode {
 // -----------------------------------------------------------------------------
 
 /** Aholo OSS walk assets (`oss-res` -> `node uploader/index.mjs gs:aholo`); indoor `gs_file/room/`, outdoor `gs_file/juguo/`. */
+/**
+ * Scene assets. Layout mirrors the asset bucket (see docs/scene-assets.md):
+ *   public/<property-slug>/<scene>/{index.ply, collision.json, collision-report.json}
+ * The property slug is the key — an address, a warehouse, anything — and each
+ * scene is one part of that place. Everything a scene needs is in one folder,
+ * so adding a scene is dropping a folder in, not editing paths in several files.
+ */
+const SCENE_HALL = '/23_nashville_dr_tenessee/hall/';
+
 const AHOLO_OSS_GS_FILE_BASE = 'https://holo-cos.aholo3d.cn/aholo-opensource/gs_file';
 /** Unused since indoor moved to the local hall-3 scene; kept for the upstream room assets. */
 void `${AHOLO_OSS_GS_FILE_BASE}/room/`;
@@ -1819,6 +1829,52 @@ class WalkDemoScene {
         this.thirdPerson?.update(state, dt);
     }
 
+    /**
+     * Level the scan by rotating the splat layer, using the rotation reported by
+     * the collision bake. This keeps the stored asset as the ORIGINAL capture —
+     * nothing has to be pre-processed into the bucket, and the splat always
+     * matches the collision grid because both come from the same measurement.
+     */
+    setLevellingRotation(m: number[][] | undefined): void {
+        if (!m) {
+            return;
+        }
+        // Matrix -> quaternion (Shepperd): pick the largest diagonal term for
+        // numerical stability, which matters here because the rotation is ~180deg.
+        const [m00, m01, m02] = m[0]!;
+        const [m10, m11, m12] = m[1]!;
+        const [m20, m21, m22] = m[2]!;
+        const trace = m00! + m11! + m22!;
+        let x: number, y: number, z: number, w: number;
+        if (trace > 0) {
+            const s = Math.sqrt(trace + 1) * 2;
+            w = 0.25 * s;
+            x = (m21! - m12!) / s;
+            y = (m02! - m20!) / s;
+            z = (m10! - m01!) / s;
+        } else if (m00! > m11! && m00! > m22!) {
+            const s = Math.sqrt(1 + m00! - m11! - m22!) * 2;
+            w = (m21! - m12!) / s;
+            x = 0.25 * s;
+            y = (m01! + m10!) / s;
+            z = (m02! + m20!) / s;
+        } else if (m11! > m22!) {
+            const s = Math.sqrt(1 + m11! - m00! - m22!) * 2;
+            w = (m02! - m20!) / s;
+            x = (m01! + m10!) / s;
+            y = 0.25 * s;
+            z = (m12! + m21!) / s;
+        } else {
+            const s = Math.sqrt(1 + m22! - m00! - m11!) * 2;
+            w = (m10! - m01!) / s;
+            x = (m02! + m20!) / s;
+            y = (m12! + m21!) / s;
+            z = 0.25 * s;
+        }
+        this.splatLayer.quaternion = new Quaternion(x, y, z, w);
+        this.splatLayer.updateMatrixWorld(true);
+    }
+
     /** Copy walk camera state to the viewer camera. */
     updateCamera(state: ReturnType<ViewerWalkMode['getCameraState']>): void {
         this.camera.scale.copy(state.scale);
@@ -1900,9 +1956,10 @@ const WALK_DEMO_SCHEMES: Record<WalkDemoSchemeId, WalkDemoScheme> = {
     indoor: {
         id: 'indoor',
         splatMode: 'files',
-        splatCandidates: ['/splat_hall_3.ply'],
-        // Baked by tools/build-collision.mjs; supplies floor AND walls.
-        collisionGrid: '/collision-hall-3/collision.json',
+        splatCandidates: [`${SCENE_HALL}index.ply`],
+        // Baked by tools/build-collision.mjs; supplies floor AND walls, and is a
+        // few KB so it lands long before the splat finishes downloading.
+        collisionGrid: `${SCENE_HALL}collision.json`,
         pose: WALK_DEMO_INDOOR_POSE,
     },
     outdoor: {
@@ -2297,7 +2354,7 @@ class WalkDemoApp {
                 this.ctx.renderer.render();
             }
 
-            await this.tryLoadCollision(walk, scheme, reloadSignal);
+            await this.tryLoadCollision(walk, scene, scheme, reloadSignal);
 
             if (generation !== this.reloadGeneration) {
                 return;
@@ -2327,7 +2384,12 @@ class WalkDemoApp {
     }
 
     /** Load voxel collision data if the scene provides it. */
-    private async tryLoadCollision(walk: ViewerWalkMode, scheme: WalkDemoScheme, signal: AbortSignal): Promise<void> {
+    private async tryLoadCollision(
+        walk: ViewerWalkMode,
+        scene: WalkDemoScene,
+        scheme: WalkDemoScheme,
+        signal: AbortSignal,
+    ): Promise<void> {
         // A baked walkable grid provides floor and walls together, so it wins
         // over the voxel pair when present.
         if (scheme.collisionGrid) {
@@ -2338,7 +2400,9 @@ class WalkDemoApp {
             }
             const text = await res.text();
             throwIfAborted(signal);
-            walk.loadCollisionGrid(JSON.parse(text) as CollisionGridData);
+            const grid = JSON.parse(text) as CollisionGridData;
+            walk.loadCollisionGrid(grid);
+            scene.setLevellingRotation(grid.rotation);
             return;
         }
 

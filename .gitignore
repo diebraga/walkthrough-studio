@@ -7,5 +7,6 @@ dist
 # large local assets, not pushed
 public/splat_mast3r_subset24.ply
 public/splat_hall_2.ply
-public/splat_hall_3.ply
 splat_hall_3.ply
+# scene splats live in public/<property-slug>/<scene>/index.ply; kept local, too big for git
+public/**/*.ply

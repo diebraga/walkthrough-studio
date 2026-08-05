@@ -8,12 +8,19 @@
  *           to `wallHeight`. These follow the room's true shape (alcoves, the
  *           doorway) because the region came from a flood fill, not a rectangle.
  *
- * The grid is axis-aligned in the levelled frame the bake reports. This scene's
- * splat is already level to within 0.8 deg, so the bake's rotation is treated as
- * identity; a scene needing more would have to rotate the splat layer to match.
+ * The grid is axis-aligned in the LEVELLED frame the bake reports, which is not
+ * the frame the stored .ply is in — a raw y-down capture needs ~180 deg. The
+ * scene applies `rotation` to the splat layer on load so the two line up, which
+ * is what lets the bucket hold the original scan with no pre-processing.
  */
 
 export interface CollisionGridData {
+    /**
+     * 3x3 rotation that levels the scan (row-major). The grid below is expressed
+     * in the resulting frame, so the splat must be rotated by this to match.
+     * A raw y-down capture yields roughly 180 degrees here.
+     */
+    rotation?: number[][];
     cell: number;
     origin: [number, number];
     size: [number, number];

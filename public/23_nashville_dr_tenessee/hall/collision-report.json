@@ -1,0 +1,36 @@
+{
+  "input": "public/23_nashville_dr_tenessee/hall/index.ply",
+  "cell": 0.15,
+  "warnings": [],
+  "sampledPoints": 250000,
+  "opacityGate": 0.048,
+  "solidPoints": 162500,
+  "normalEigenvalues": [
+    2371.9,
+    1842,
+    1100.2
+  ],
+  "upAxis": [
+    0.1747,
+    0.9182,
+    0.3556
+  ],
+  "flipped": true,
+  "floor": {
+    "y": -1.107,
+    "tiltDeg": 2.55,
+    "rmsMeters": 0.041,
+    "inlierCells": 98
+  },
+  "levellingIterations": 8,
+  "floorY": -1.658,
+  "ceilingY": 2.21,
+  "wallHeight": 3.87,
+  "residualTiltDeg": 0.23,
+  "obstacleThreshold": 126,
+  "componentCount": 76,
+  "walkableCells": 2216,
+  "walkableAreaM2": 49.9,
+  "floorCells": 2857,
+  "walkableFractionOfFloor": 0.78
+}
