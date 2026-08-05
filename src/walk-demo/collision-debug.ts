@@ -19,6 +19,7 @@ import {
     type Scene3D,
 } from '@manycore/aholo-viewer';
 import type { GridCollision } from './grid-collision';
+import type { Portal } from './portals';
 
 /** Drawn thickness of the floor slab. Purely visual; the collider is a half-space. */
 const SLAB = 0.1;
@@ -29,6 +30,11 @@ const EXTENT = 9;
 /** Rebuild once the player has moved this far from the last centre. */
 const REBUILD_DISTANCE = 2;
 const PINK = 0xff3ea5;
+/** Portals get their own colours so they read as separate from the collider. */
+const PORTAL = 0x33bbff;
+const PORTAL_ACTIVE = 0xffd400;
+/** Drawn height of a portal marker. */
+const PORTAL_HEIGHT = 1.8;
 
 /** Append one axis-aligned box (12 triangles, outward normals) to the buffers. */
 function pushBox(
@@ -71,6 +77,8 @@ function pushBox(
 export class CollisionDebugOverlay {
     private readonly scene: Scene3D;
     private mesh: InstanceType<typeof Mesh> | undefined;
+    private portalMesh: InstanceType<typeof Mesh> | undefined;
+    private portalKey = '';
     private lastCenter: { x: number; z: number } | undefined;
     private visible = false;
 
@@ -125,7 +133,9 @@ export class CollisionDebugOverlay {
             }
         }
 
-        this.dispose();
+        this.mesh?.removeFromParent?.();
+        this.mesh?.freeAllGpuResourceOwned?.();
+        this.mesh = undefined;
         if (positions.length === 0) {
             return;
         }
@@ -138,11 +148,92 @@ export class CollisionDebugOverlay {
         this.mesh = mesh;
     }
 
+    /**
+     * Draw a marker per portal: a low ring of blocks around its radius, so the
+     * trigger area is visible on the floor without hiding the scene. The one you
+     * are standing in turns yellow, which is faster to read than the console.
+     */
+    updatePortals(portals: readonly Portal[], activeName: string | undefined, floorY: number): void {
+        const key = `${activeName ?? ''}|${portals.map((p) => `${p.name}:${p.position.x.toFixed(2)}:${p.position.z.toFixed(2)}:${p.radius}`).join('|')}`;
+        if (key === this.portalKey) {
+            return;
+        }
+        this.portalKey = key;
+        this.disposePortals();
+        if (!portals.length) {
+            return;
+        }
+
+        const positions: number[] = [];
+        const normals: number[] = [];
+        const activePositions: number[] = [];
+        const activeNormals: number[] = [];
+        for (const portal of portals) {
+            const target = portal.name === activeName ? activePositions : positions;
+            const targetN = portal.name === activeName ? activeNormals : normals;
+            const segments = 16;
+            const post = 0.06;
+            for (let i = 0; i < segments; i++) {
+                const a = (i / segments) * Math.PI * 2;
+                const px = portal.position.x + Math.cos(a) * portal.radius;
+                const pz = portal.position.z + Math.sin(a) * portal.radius;
+                pushBox(target, targetN, px - post, floorY, pz - post, px + post, floorY + PORTAL_HEIGHT * 0.25, pz + post);
+            }
+            // Centre pole, so a portal is findable from across the room.
+            pushBox(
+                target,
+                targetN,
+                portal.position.x - post,
+                floorY,
+                portal.position.z - post,
+                portal.position.x + post,
+                floorY + PORTAL_HEIGHT,
+                portal.position.z + post,
+            );
+        }
+
+        const build = (pos: number[], nrm: number[], colour: number) => {
+            if (!pos.length) return undefined;
+            const g = new BufferGeometry();
+            g.setAttribute('position', new BufferAttribute(new Float32Array(pos), 3));
+            g.setAttribute('normal', new BufferAttribute(new Float32Array(nrm), 3));
+            const m = new Mesh(g as never, new MeshPhongMaterial({ color: colour, side: Side.DoubleSide }));
+            this.scene.add(m as never);
+            return m;
+        };
+        // Merge both colours into one mesh slot by drawing inactive first; the
+        // active one is a separate mesh so it can use its own material.
+        this.portalMesh = build(positions, normals, PORTAL);
+        const activeMesh = build(activePositions, activeNormals, PORTAL_ACTIVE);
+        if (activeMesh) {
+            if (this.portalMesh) {
+                // Keep a single handle: parent the active mesh under the scene and
+                // track it for disposal via the same key-based rebuild.
+                this.portalExtra = activeMesh;
+            } else {
+                this.portalMesh = activeMesh;
+            }
+        }
+    }
+
+    private portalExtra: InstanceType<typeof Mesh> | undefined;
+
+    private disposePortals(): void {
+        for (const m of [this.portalMesh, this.portalExtra]) {
+            m?.removeFromParent?.();
+            m?.freeAllGpuResourceOwned?.();
+        }
+        this.portalMesh = undefined;
+        this.portalExtra = undefined;
+    }
+
     setVisible(visible: boolean): void {
         this.visible = visible;
         if (this.mesh) {
             this.mesh.visible = visible;
         }
+        // Portal markers are not touched: they belong to the 'portals' dev flag,
+        // not the collision toggle.
         if (!visible) {
             // Force a rebuild next time it is switched on, so it re-centres.
             this.lastCenter = undefined;
@@ -153,5 +244,7 @@ export class CollisionDebugOverlay {
         this.mesh?.removeFromParent?.();
         this.mesh?.freeAllGpuResourceOwned?.();
         this.mesh = undefined;
+        this.disposePortals();
+        this.portalKey = '';
     }
 }

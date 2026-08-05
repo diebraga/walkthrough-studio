@@ -11,6 +11,7 @@ public/
       index.ply               the splat (gitignored, too large for git)
       collision.json          baked collision — floor plane + walkable grid
       collision-report.json   what the bake measured, and its QA warnings
+      portals.json            named points in the scene (optional)
 ```
 
 Real example:
@@ -40,6 +41,9 @@ the source of truth for now, and nothing should depend on a database.
 
 Everything a scene needs lives in one folder. Adding a scene is dropping a folder
 in; nothing has to be renamed or wired up elsewhere.
+
+Portals are captured in-app rather than written by hand — see
+[dev-settings.md](dev-settings.md).
 
 ## Adding a scene
 

@@ -11,6 +11,7 @@
  *
  * Scene presets and spawn poses are defined near the bottom of the file.
  */
+import type { FolderApi, Pane } from 'tweakpane';
 import type { RenderRuntime, RuntimeIndexedDBStorage } from './render-runtime.js';
 import {
     AmbientLight,
@@ -33,6 +34,15 @@ import {
 } from '@manycore/aholo-viewer';
 import type { Scene3D, Viewer } from '@manycore/aholo-viewer';
 import { CollisionDebugOverlay } from './collision-debug';
+import { activeDevFlags, devEnabled } from './dev-settings';
+import {
+    createPortal,
+    loadPortals,
+    nextPortalName,
+    portalAt,
+    savePortals,
+    type Portal,
+} from './portals';
 import { FloorPlaneCollision, type FloorPlaneOptions } from './floor-plane';
 import { GridCollision, type CollisionGridData } from './grid-collision';
 
@@ -1921,6 +1931,8 @@ interface WalkDemoScheme {
     voxelBin?: string;
     /** Baked walkable grid; when set it supersedes voxelJson/voxelBin. */
     collisionGrid?: string;
+    /** Folder holding this scene's assets; portals.json is read/written here. */
+    assetBase?: string;
     pose: WalkDemoInitialPose;
 }
 
@@ -1956,6 +1968,7 @@ const WALK_DEMO_SCHEMES: Record<WalkDemoSchemeId, WalkDemoScheme> = {
     indoor: {
         id: 'indoor',
         splatMode: 'files',
+        assetBase: SCENE_HALL,
         splatCandidates: [`${SCENE_HALL}index.ply`],
         // Baked by tools/build-collision.mjs; supplies floor AND walls, and is a
         // few KB so it lands long before the splat finishes downloading.
@@ -2086,7 +2099,13 @@ class WalkDemoApp {
         viewMode: WalkViewMode;
         thirdPersonCharacter: WalkThirdPersonCharacterId;
         showCollision: boolean;
+        portalName: string;
+        portalStatus: string;
+        insidePortal: string;
     };
+    private portals: Portal[] = [];
+    private portalsFolder: FolderApi | undefined;
+    private portalRows: FolderApi[] = [];
     private collisionDebug: CollisionDebugOverlay | undefined;
     private scene: WalkDemoScene | undefined;
     private walk: ViewerWalkMode | undefined;
@@ -2105,13 +2124,20 @@ class WalkDemoApp {
             viewMode: 'third',
             // Changed from the upstream 'man' default.
             thirdPersonCharacter: 'robot',
-            // Debug aid: on by default so collision holes are obvious.
-            showCollision: true,
+            // Developer setting; off unless the 'collision' dev flag is set.
+            showCollision: devEnabled('collision'),
+            portalName: '',
+            portalStatus: '-',
+            insidePortal: '-',
         };
     }
 
     /** Mount UI, start the frame loop, and load the first scene. */
     async run(): Promise<void> {
+        const flags = activeDevFlags();
+        if (flags.length) {
+            console.log(`[walk] developer settings active: ${flags.join(', ')} (see docs/dev-settings.md)`);
+        }
         this.mountConfigPanel();
         /** Frame callback returns whether the runtime should render. */
         this.ctx.renderer.frame(({ delta }) => this.onFrame(delta));
@@ -2146,9 +2172,17 @@ class WalkDemoApp {
             .on('change', () => {
                 void this.swapThirdPersonCharacter();
             });
-        pane.addBinding(this.params, 'showCollision', { label: 'Show collision' }).on('change', () => {
-            this.collisionDebug?.setVisible(this.params.showCollision);
-        });
+        // Developer setting: hidden unless the collision flag is on. See
+        // docs/dev-settings.md.
+        if (devEnabled('collision')) {
+            pane.addBinding(this.params, 'showCollision', { label: 'Show collision' }).on('change', () => {
+                this.collisionDebug?.setVisible(this.params.showCollision);
+            });
+        }
+        // Developer setting: portal capture. See docs/dev-settings.md.
+        if (devEnabled('portals')) {
+            this.mountPortalPanel(pane);
+        }
         pane.addBinding(this.params, 'viewMode', {
             label: ui.viewLabel,
             options: { [ui.first]: 'first', [ui.third]: 'third' },
@@ -2164,6 +2198,113 @@ class WalkDemoApp {
             }
         });
     }
+
+    /** Capture UI plus the per-portal list. Developer setting only. */
+    private mountPortalPanel(pane: Pane): void {
+        const folder = pane.addFolder({ title: 'Portals' });
+        folder.addBinding(this.params, 'portalName', { label: 'Name' });
+        folder.addButton({ title: 'Add portal here' }).on('click', () => {
+            void this.capturePortal();
+        });
+        // Read-only feedback: whether the last save worked, and which portal you
+        // are standing in right now.
+        folder.addBinding(this.params, 'portalStatus', { readonly: true, label: 'saved' });
+        folder.addBinding(this.params, 'insidePortal', { readonly: true, label: 'inside' });
+        this.portalsFolder = folder;
+        this.rebuildPortalList();
+    }
+
+    /** Record a portal where the walker is standing, then persist. */
+    private async capturePortal(): Promise<void> {
+        const walk = this.walk;
+        const base = WALK_DEMO_SCHEMES[this.params.scheme].assetBase;
+        if (!walk || !base) {
+            return;
+        }
+        const state = walk.getCharacterState();
+        const name = this.params.portalName.trim() || nextPortalName(this.portals);
+        if (this.portals.some((p) => p.name === name)) {
+            this.params.portalStatus = `name '${name}' already used`;
+            return;
+        }
+        this.portals.push(createPortal(name, state.position.x, state.position.y, state.position.z, state.yaw));
+        this.params.portalName = '';
+        this.rebuildPortalList();
+        await this.persistPortals(base);
+    }
+
+    private async persistPortals(base: string): Promise<void> {
+        const error = await savePortals(base, this.portals);
+        this.params.portalStatus = error
+            ? `save failed: ${error}`
+            : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    }
+
+    /**
+     * Redraw the per-portal rows. The whole list is disposed and rebuilt rather
+     * than patched: tweakpane does not handle incremental mutation well, and the
+     * list is small enough that rebuilding costs nothing.
+     */
+    private rebuildPortalList(): void {
+        const folder = this.portalsFolder;
+        if (!folder) {
+            return;
+        }
+        for (const row of this.portalRows.splice(0)) {
+            row.dispose();
+        }
+        const base = WALK_DEMO_SCHEMES[this.params.scheme].assetBase;
+        for (const portal of this.portals) {
+            // Collapsed by default: deleting takes expand-then-click, so a stray
+            // click on the list cannot remove the wrong portal.
+            const row = folder.addFolder({ title: portal.name, expanded: false });
+            const at = {
+                x: +portal.position.x.toFixed(2),
+                y: +portal.position.y.toFixed(2),
+                z: +portal.position.z.toFixed(2),
+            };
+            row.addBinding(at, 'x', { readonly: true });
+            row.addBinding(at, 'y', { readonly: true });
+            row.addBinding(at, 'z', { readonly: true });
+            row.addBinding(portal, 'radius', { min: 0.3, max: 3, step: 0.1 }).on('change', () => {
+                if (base) void this.persistPortals(base);
+            });
+            row.addButton({ title: 'Delete' }).on('click', () => {
+                this.portals = this.portals.filter((p) => p !== portal);
+                this.rebuildPortalList();
+                if (base) void this.persistPortals(base);
+            });
+            this.portalRows.push(row);
+        }
+    }
+
+    /**
+     * Edge-triggered portal enter/exit. Fires once per transition rather than
+     * every frame, which is also how a real scene change will need to behave —
+     * enter starts it, exit cancels a prefetch if you step back out.
+     */
+    private updatePortalTrigger(walk: ViewerWalkMode, x: number, z: number): void {
+        if (!devEnabled('portals')) {
+            return;
+        }
+        const current = portalAt(this.portals, x, z);
+        if (current?.name !== this.insidePortalName) {
+            if (this.insidePortalName) {
+                console.log(`[portal] exited ${this.insidePortalName}`);
+            }
+            if (current) {
+                console.log(`[portal] entered ${current.name}`, current.to ? `-> ${current.to}` : '(no target yet)');
+            }
+            this.insidePortalName = current?.name;
+            this.params.insidePortal = current?.name ?? '-';
+        }
+        const floorY = walk.collisionGrid?.floorY;
+        if (floorY !== undefined) {
+            this.collisionDebug?.updatePortals(this.portals, this.insidePortalName, floorY);
+        }
+    }
+
+    private insidePortalName: string | undefined;
 
     /** Apply third-person camera distance for the current scene. */
     private applyThirdPersonCameraToWalk(walk: ViewerWalkMode, scheme: WalkDemoScheme): void {
@@ -2258,6 +2399,7 @@ class WalkDemoApp {
         sceneLoop.setThirdPersonEnabled(showAvatar);
         const walker = walkLoop.getCharacterState().position;
         this.collisionDebug?.update(walkLoop.collisionGrid, walker.x, walker.z);
+        this.updatePortalTrigger(walkLoop, walker.x, walker.z);
         sceneLoop.updateCamera(walkLoop.getCameraState());
         if (scheme.splatMode === 'lod') {
             sceneLoop.tickLod();
@@ -2355,6 +2497,9 @@ class WalkDemoApp {
             }
 
             await this.tryLoadCollision(walk, scene, scheme, reloadSignal);
+
+            this.portals = scheme.assetBase ? await loadPortals(scheme.assetBase, reloadSignal) : [];
+            this.rebuildPortalList();
 
             if (generation !== this.reloadGeneration) {
                 return;
