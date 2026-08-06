@@ -53,6 +53,7 @@ import { resolvePortalTeleport, type TeleportPose } from './teleport';
 import { flyVector } from './fly-mode';
 import { mobileJoystickInput } from './mobile-joystick';
 import { clampPitch, nextLookAngles } from './walk-look';
+import { splatFileTypeUrl } from './splat-file-type';
 import { formatDeveloperPose } from './dev-position';
 import { splatUrl } from './asset-url';
 import { FloorPlaneCollision, type FloorPlaneOptions } from './floor-plane';
@@ -1981,7 +1982,7 @@ class WalkDemoScene {
             const buffer = await response.arrayBuffer();
             throwIfAborted(signal);
             const u8 = new Uint8Array(buffer);
-            const type = detectSplatFileType(url, u8);
+            const type = detectSplatFileType(splatFileTypeUrl(url), u8);
             if (type === undefined) {
                 throw new Error(`[walk] Unknown splat file type: ${url}`);
             }
@@ -2363,7 +2364,7 @@ function createWalkOutdoorLodResourceLoader(
             return splatData;
         }
 
-        const fileType = detectSplatFileType(resourceUrl, new Uint8Array());
+        const fileType = detectSplatFileType(splatFileTypeUrl(resourceUrl), new Uint8Array());
         if (fileType === undefined) {
             throw new Error(`[walk] Unsupported LOD resource: ${resourceUrl}`);
         }
