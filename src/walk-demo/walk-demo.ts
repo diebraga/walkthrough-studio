@@ -2725,7 +2725,7 @@ class WalkDemoApp {
   bottom: max(22px, env(safe-area-inset-bottom));
   width: 112px;
   height: 112px;
-  display: none;
+  display: block;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.16);
   border: 1px solid rgba(255, 255, 255, 0.28);
@@ -2733,7 +2733,7 @@ class WalkDemoApp {
   backdrop-filter: blur(18px) saturate(1.6);
   -webkit-backdrop-filter: blur(18px) saturate(1.6);
   touch-action: none;
-  z-index: 4;
+  z-index: 10000;
 }
 .walk-mobile-joystick__knob {
   position: absolute;
@@ -2747,8 +2747,8 @@ class WalkDemoApp {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.55);
   transform: translate(-50%, -50%);
 }
-@media (orientation: landscape) and (any-pointer: coarse), (orientation: landscape) and (max-width: 1180px) {
-  .walk-mobile-joystick { display: block; }
+@media (hover: hover) and (pointer: fine) {
+  .walk-mobile-joystick { display: none; }
 }`;
         const joystick = document.createElement('div');
         joystick.className = 'walk-mobile-joystick';
