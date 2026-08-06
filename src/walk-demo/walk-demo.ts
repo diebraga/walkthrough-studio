@@ -2276,7 +2276,7 @@ const WALK_DEMO_SCHEMES: Record<WalkDemoSchemeId, WalkDemoScheme> = {
         id: 'balcony',
         splatMode: 'files',
         assetBase: SCENE_BALCONY,
-        splatCandidates: [splatUrl(SCENE_BALCONY, SPLAT_BASE_URL)],
+        splatCandidates: [`${splatUrl(SCENE_BALCONY, SPLAT_BASE_URL)}?v=brush-balcony-20260806`],
         collisionGrid: `${SCENE_BALCONY}collision.json`,
         pose: WALK_DEMO_BALCONY_POSE,
     },
