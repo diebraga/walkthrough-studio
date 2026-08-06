@@ -2429,7 +2429,6 @@ class WalkDemoApp {
     private thirdPersonCharacterBinding: { refresh(): void } | undefined;
     private portalFade: HTMLDivElement | undefined;
     private mobileJoystick: HTMLDivElement | undefined;
-    private mobileJoystickStyle: HTMLStyleElement | undefined;
     private teleporting = false;
     private firstSceneLoad = true;
 
@@ -2474,7 +2473,10 @@ class WalkDemoApp {
             return;
         }
         const ui = getWalkDemoUiStrings();
-        const pane = this.ctx.configPanel.createPane({ title: ui.paneTitle });
+        const pane = this.ctx.configPanel.createPane({
+            title: ui.paneTitle,
+            expanded: !window.matchMedia('(max-width: 760px)').matches,
+        });
         // Outdoor is intentionally left out; local property scenes stay listed.
         // The 'outdoor' scheme still exists, so re-adding it here is enough.
         pane.addBinding(this.params, 'scheme', {
@@ -2717,44 +2719,39 @@ class WalkDemoApp {
         if (this.mobileJoystick) {
             return;
         }
-        const style = document.createElement('style');
-        style.textContent = `
-.walk-mobile-joystick {
-  position: fixed;
-  left: max(18px, env(safe-area-inset-left));
-  bottom: max(22px, env(safe-area-inset-bottom));
-  width: 112px;
-  height: 112px;
-  display: block;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.16);
-  border: 1px solid rgba(255, 255, 255, 0.28);
-  box-shadow: 0 14px 44px rgba(0, 0, 0, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.35);
-  backdrop-filter: blur(18px) saturate(1.6);
-  -webkit-backdrop-filter: blur(18px) saturate(1.6);
-  touch-action: none;
-  z-index: 10000;
-}
-.walk-mobile-joystick__knob {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 50px;
-  height: 50px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.34);
-  border: 1px solid rgba(255, 255, 255, 0.42);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.55);
-  transform: translate(-50%, -50%);
-}
-@media (hover: hover) and (pointer: fine) {
-  .walk-mobile-joystick { display: none; }
-}`;
         const joystick = document.createElement('div');
         joystick.className = 'walk-mobile-joystick';
         joystick.setAttribute('aria-hidden', 'true');
+        joystick.style.cssText = [
+            'position:fixed',
+            'left:max(18px, env(safe-area-inset-left))',
+            'bottom:max(22px, env(safe-area-inset-bottom))',
+            'width:112px',
+            'height:112px',
+            'display:block',
+            'border-radius:999px',
+            'background:rgba(255,255,255,0.16)',
+            'border:1px solid rgba(255,255,255,0.28)',
+            'box-shadow:0 14px 44px rgba(0,0,0,0.32), inset 0 1px 0 rgba(255,255,255,0.35)',
+            'backdrop-filter:blur(18px) saturate(1.6)',
+            '-webkit-backdrop-filter:blur(18px) saturate(1.6)',
+            'touch-action:none',
+            'z-index:10000',
+        ].join(';');
         const knob = document.createElement('div');
         knob.className = 'walk-mobile-joystick__knob';
+        knob.style.cssText = [
+            'position:absolute',
+            'left:50%',
+            'top:50%',
+            'width:50px',
+            'height:50px',
+            'border-radius:999px',
+            'background:rgba(255,255,255,0.34)',
+            'border:1px solid rgba(255,255,255,0.42)',
+            'box-shadow:0 8px 24px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.55)',
+            'transform:translate(-50%, -50%)',
+        ].join(';');
         joystick.append(knob);
 
         let pointerId: number | undefined;
@@ -2786,9 +2783,7 @@ class WalkDemoApp {
         joystick.addEventListener('pointerup', reset);
         joystick.addEventListener('pointercancel', reset);
 
-        document.head.append(style);
         document.body.append(joystick);
-        this.mobileJoystickStyle = style;
         this.mobileJoystick = joystick;
     }
 
@@ -3148,8 +3143,6 @@ class WalkDemoApp {
         this.portalFade = undefined;
         this.mobileJoystick?.remove();
         this.mobileJoystick = undefined;
-        this.mobileJoystickStyle?.remove();
-        this.mobileJoystickStyle = undefined;
         this.ctx.configPanel.clear();
         const cam = this.restoredCamera;
         this.restoredCamera = undefined;

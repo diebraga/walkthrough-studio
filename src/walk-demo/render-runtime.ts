@@ -120,18 +120,40 @@ function createIndexedDBStorage(dbName: string): RuntimeIndexedDBStorage {
  */
 const OVERLAY_ROOT = document.body;
 
-/**
- * No-op loading controller.
- *
- * The overlay is gone: the opening anneal is the transition now, so a scene
- * resolves into place rather than being covered by a "Loading…" card. The
- * interface stays because walk-demo.ts is a copy of upstream and calls
- * ctx.loading.show()/hide() — keeping it satisfied avoids editing that file.
- */
 function createLoading(): RuntimeLoadingController {
+  const overlay = document.createElement("div");
+  overlay.style.cssText = [
+    "position:fixed",
+    "inset:0",
+    "display:none",
+    "place-items:center",
+    "background:radial-gradient(circle at 50% 45%, rgba(255,255,255,.16), rgba(0,0,0,.62) 46%, rgba(0,0,0,.82))",
+    "backdrop-filter:blur(18px) saturate(1.25)",
+    "-webkit-backdrop-filter:blur(18px) saturate(1.25)",
+    "z-index:9000",
+    "pointer-events:none",
+  ].join(";");
+  const ring = document.createElement("div");
+  ring.style.cssText = [
+    "width:86px",
+    "height:86px",
+    "border-radius:999px",
+    "background:conic-gradient(from 0deg, rgba(255,255,255,.95), rgba(255,255,255,.12), rgba(255,255,255,.95))",
+    "mask:radial-gradient(farthest-side, transparent calc(100% - 10px), #000 calc(100% - 9px))",
+    "-webkit-mask:radial-gradient(farthest-side, transparent calc(100% - 10px), #000 calc(100% - 9px))",
+    "animation:walkLoadingSpin 950ms linear infinite",
+  ].join(";");
+  const style = document.createElement("style");
+  style.textContent = "@keyframes walkLoadingSpin{to{transform:rotate(360deg)}}";
+  overlay.append(ring);
+  OVERLAY_ROOT.append(style, overlay);
   return {
-    show() {},
-    hide() {},
+    show() {
+      overlay.style.display = "grid";
+    },
+    hide() {
+      overlay.style.display = "none";
+    },
   };
 }
 
