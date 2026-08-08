@@ -58,6 +58,15 @@ import { formatDeveloperPose } from './dev-position';
 import { splatUrl } from './asset-url';
 import { FloorPlaneCollision, type FloorPlaneOptions } from './floor-plane';
 import { GridCollision, type CollisionGridData } from './grid-collision';
+import {
+    CombinedCollision,
+    EMPTY_MANUAL_COLLISION,
+    ManualCollision,
+    eraseManualCollisionAt,
+    loadManualCollision,
+    saveManualCollision,
+    type ManualCollisionData,
+} from './manual-collision';
 
 /**
  * Synthetic floor for the local hall-3 scene, measured from the leveled splat:
@@ -559,6 +568,9 @@ export class ViewerWalkMode {
             out: { x: number; y: number; z: number },
         ) => boolean;
     } | null = null;
+    private baseCollision: ViewerWalkMode['collision'] = null;
+    private manualOverlay: ManualCollisionData | null = null;
+    private freeRoam = false;
 
     private enabled = false;
     private keys: Record<string, boolean> = {};
@@ -645,7 +657,8 @@ export class ViewerWalkMode {
         void metadata;
         void nodes;
         void leafData;
-        this.collision = WALK_FLOOR_PLANE ? new FloorPlaneCollision(undefined, WALK_FLOOR_PLANE) : null;
+        this.baseCollision = WALK_FLOOR_PLANE ? new FloorPlaneCollision(undefined, WALK_FLOOR_PLANE) : null;
+        this.applyCollisionSource();
     }
 
     /**
@@ -656,7 +669,41 @@ export class ViewerWalkMode {
     loadCollisionGrid(data: CollisionGridData) {
         const grid = new GridCollision(data);
         this.grid = grid;
-        this.collision = grid;
+        this.baseCollision = grid;
+        this.applyCollisionSource();
+    }
+
+    setManualCollision(data: ManualCollisionData) {
+        this.manualOverlay = data.floors.length || data.walls.length ? data : null;
+        this.applyCollisionSource();
+    }
+
+    /**
+     * Dev toggle: walk anywhere with nothing but an infinite floor underfoot —
+     * no walls to block movement or the third-person camera boom. Useful for
+     * previewing a character/animation without fighting a half-baked collision
+     * grid. Off restores whatever the scene + manual overlay would normally give.
+     */
+    setFreeRoam(enabled: boolean) {
+        this.freeRoam = enabled;
+        this.applyCollisionSource();
+    }
+
+    private applyCollisionSource(): void {
+        if (this.freeRoam) {
+            const floorY = this.grid?.floorY ?? WALK_FLOOR_PLANE?.y ?? 0;
+            this.collision = new FloorPlaneCollision(undefined, {
+                y: floorY,
+                minX: -Infinity,
+                maxX: Infinity,
+                minZ: -Infinity,
+                maxZ: Infinity,
+            });
+            return;
+        }
+        this.collision = this.manualOverlay
+            ? new CombinedCollision(this.baseCollision, new ManualCollision(this.manualOverlay))
+            : this.baseCollision;
     }
 
     private grid: GridCollision | undefined;
@@ -2407,6 +2454,7 @@ class WalkDemoApp {
         viewMode: WalkViewMode;
         thirdPersonCharacter: WalkThirdPersonCharacterId;
         showCollision: boolean;
+        freeRoam: boolean;
         preset: WalkPresetId;
         fps: string;
         showPortals: boolean;
@@ -2414,8 +2462,10 @@ class WalkDemoApp {
         portalStatus: string;
         insidePortal: string;
         positionStatus: string;
+        manualCollisionStatus: string;
     };
     private portals: Portal[] = [];
+    private manualCollision: ManualCollisionData = { ...EMPTY_MANUAL_COLLISION, floors: [], walls: [] };
     private portalsFolder: FolderApi | undefined;
     private portalRows: FolderApi[] = [];
     private collisionDebug: CollisionDebugOverlay | undefined;
@@ -2445,6 +2495,12 @@ class WalkDemoApp {
             // Debug views default OFF and remember their last state, so a reload
             // never drops you into a scene full of debug geometry.
             showCollision: readDevToggle('showCollision'),
+            // Defaults ON (in dev builds only — see devEnabled below): an
+            // unrestricted floor-only collider is what you want while
+            // previewing a character/camera, not an opt-in extra. Gated by
+            // devEnabled so a production visitor always gets real collision
+            // even if this happens to be true in localStorage from dev use.
+            freeRoam: devEnabled('collision') && readDevToggle('freeRoam', true),
             // Separate from showCollision on purpose: the common case while
             // authoring is markers on with the collision overlay off.
             showPortals: readDevToggle('showPortals'),
@@ -2452,6 +2508,7 @@ class WalkDemoApp {
             portalStatus: '-',
             insidePortal: '-',
             positionStatus: '-',
+            manualCollisionStatus: '-',
         };
     }
 
@@ -2505,6 +2562,23 @@ class WalkDemoApp {
                 writeDevToggle('showCollision', this.params.showCollision);
                 this.collisionDebug?.setVisible(this.params.showCollision);
             });
+            pane.addBinding(this.params, 'freeRoam', { label: 'Free roam' }).on('change', () => {
+                writeDevToggle('freeRoam', this.params.freeRoam);
+                this.walk?.setFreeRoam(this.params.freeRoam);
+            });
+            pane.addButton({ title: 'Add floor collision' }).on('click', () => {
+                this.addManualFloorCollision();
+            });
+            pane.addButton({ title: 'Add wall collision' }).on('click', () => {
+                this.addManualWallCollision();
+            });
+            pane.addButton({ title: 'Erase collision' }).on('click', () => {
+                this.eraseManualCollision();
+            });
+            pane.addButton({ title: 'Save collision' }).on('click', () => {
+                void this.persistManualCollision();
+            });
+            pane.addBinding(this.params, 'manualCollisionStatus', { readonly: true, label: 'manual' });
         }
         // Developer setting: rendering preset and frame rate, for comparing the
         // 3dgs preset options. See docs/dev-settings.md.
@@ -2801,6 +2875,84 @@ class WalkDemoApp {
         }
     }
 
+    private currentFloorY(): number {
+        const walk = this.walk;
+        if (!walk) return this.manualCollision.floorY;
+        const pose = walk.getPose();
+        return this.manualCollision.floors.length || this.manualCollision.walls.length
+            ? this.manualCollision.floorY
+            : (walk.collisionGrid?.floorY ?? pose.y - WALK_HOVER_HEIGHT - WALK_EYE_HEIGHT);
+    }
+
+    private aimPoint(): { x: number; z: number; yaw: number } | null {
+        const walk = this.walk;
+        if (!walk) return null;
+        const camera = walk.getCameraState();
+        const yaw = camera.rotation.y;
+        const pitch = camera.rotation.x;
+        const cp = Math.cos(pitch);
+        const dx = -Math.sin(yaw) * cp;
+        const dy = Math.sin(pitch);
+        const dz = -Math.cos(yaw) * cp;
+        const floorY = this.currentFloorY();
+        if (dy < -0.01 && camera.position.y > floorY) {
+            const t = (floorY - camera.position.y) / dy;
+            if (t > 0 && t < 12) {
+                return { x: camera.position.x + dx * t, z: camera.position.z + dz * t, yaw };
+            }
+        }
+        const pose = walk.getPose();
+        return { x: pose.x - Math.sin(pose.yaw) * 1.5, z: pose.z - Math.cos(pose.yaw) * 1.5, yaw: pose.yaw };
+    }
+
+    private applyManualCollision(): void {
+        this.walk?.setManualCollision(this.manualCollision);
+        this.collisionDebug?.updateManualCollision(this.manualCollision);
+    }
+
+    private addManualFloorCollision(): void {
+        const point = this.aimPoint();
+        if (!point) return;
+        this.manualCollision = {
+            ...this.manualCollision,
+            floorY: this.currentFloorY(),
+            wallHeight: this.manualCollision.wallHeight || 2,
+            floors: [...this.manualCollision.floors, { x: point.x, z: point.z, width: 3, depth: 3 }],
+        };
+        this.params.manualCollisionStatus = `${this.manualCollision.floors.length} floor, ${this.manualCollision.walls.length} wall`;
+        this.applyManualCollision();
+    }
+
+    private addManualWallCollision(): void {
+        const point = this.aimPoint();
+        if (!point) return;
+        this.manualCollision = {
+            ...this.manualCollision,
+            floorY: this.currentFloorY(),
+            wallHeight: this.manualCollision.wallHeight || 2,
+            walls: [...this.manualCollision.walls, { x: point.x, z: point.z, width: 1.4, depth: 0.24, yaw: point.yaw }],
+        };
+        this.params.manualCollisionStatus = `${this.manualCollision.floors.length} floor, ${this.manualCollision.walls.length} wall`;
+        this.applyManualCollision();
+    }
+
+    private eraseManualCollision(): void {
+        const point = this.aimPoint();
+        if (!point) return;
+        this.manualCollision = eraseManualCollisionAt(this.manualCollision, point.x, point.z, 0.7);
+        this.params.manualCollisionStatus = `${this.manualCollision.floors.length} floor, ${this.manualCollision.walls.length} wall`;
+        this.applyManualCollision();
+    }
+
+    private async persistManualCollision(): Promise<void> {
+        const base = WALK_DEMO_SCHEMES[this.params.scheme].assetBase;
+        if (!base) return;
+        const error = await saveManualCollision(base, this.manualCollision);
+        this.params.manualCollisionStatus = error
+            ? `save failed: ${error}`
+            : `saved ${this.manualCollision.floors.length}/${this.manualCollision.walls.length}`;
+    }
+
     private insidePortalName: string | undefined;
     private frameCount = 0;
     private fpsSampledAt = performance.now();
@@ -3021,6 +3173,11 @@ class WalkDemoApp {
             }
 
             await this.tryLoadCollision(walk, scene, scheme, reloadSignal);
+            this.manualCollision = scheme.assetBase
+                ? await loadManualCollision(scheme.assetBase, reloadSignal)
+                : { ...EMPTY_MANUAL_COLLISION, floors: [], walls: [] };
+            walk.setManualCollision(this.manualCollision);
+            walk.setFreeRoam(this.params.freeRoam);
             if (options.pose) {
                 walk.startAtPose(new Vector3(p.px, p.py, p.pz), p.yaw, p.pitch, { snapToGround: false });
                 walk.update(0);
@@ -3039,6 +3196,7 @@ class WalkDemoApp {
             this.collisionDebug = new CollisionDebugOverlay(this.ctx.renderer.scene);
             this.collisionDebug.setVisible(this.params.showCollision);
             this.collisionDebug.setPortalsVisible(this.params.showPortals);
+            this.collisionDebug.updateManualCollision(this.manualCollision);
 
             this.ctx.renderer.resize();
             this.running = true;
