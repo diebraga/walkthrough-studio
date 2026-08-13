@@ -2533,10 +2533,6 @@ class WalkDemoApp {
                 writeDevToggle('showCollision', this.params.showCollision);
                 this.collisionDebug?.setVisible(this.params.showCollision);
             });
-            pane.addBinding(this.params, 'freeRoam', { label: 'Free roam' }).on('change', () => {
-                writeDevToggle('freeRoam', this.params.freeRoam);
-                this.walk?.setFreeRoam(this.params.freeRoam);
-            });
             pane.addButton({ title: 'Add floor collision' }).on('click', () => {
                 this.addManualFloorCollision();
             });
@@ -3148,7 +3144,6 @@ class WalkDemoApp {
                 ? await loadManualCollision(scheme.assetBase, reloadSignal)
                 : { ...EMPTY_MANUAL_COLLISION, floors: [], walls: [] };
             walk.setManualCollision(this.manualCollision);
-            walk.setFreeRoam(this.params.freeRoam);
             if (options.pose) {
                 walk.startAtPose(new Vector3(p.px, p.py, p.pz), p.yaw, p.pitch, { snapToGround: false });
                 walk.update(0);
