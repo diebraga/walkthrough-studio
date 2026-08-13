@@ -1,14 +1,8 @@
 /**
- * Debug overlay: draws the active collider as solid volumes rather than points,
- * so you can see exactly what is blocking you.
- *
- * Both colliders are drawn, because both are live:
- *   floor — one slab across the walkable region
- *   walls — the grid cells that are NOT walkable, extruded to wall height
- *
- * Only cells on the BOUNDARY of the walkable region are drawn. The non-walkable
- * set includes everything outside the room too, which would enclose the camera
- * in a solid pink shell.
+ * Debug overlay: draws the manual collision (floors/walls placed via the dev
+ * panel) as solid volumes, so you can see exactly what is blocking you. The
+ * baked scene collision is no longer drawn — free roam ignores it, so a pink
+ * overlay for it would be misleading about what actually blocks movement.
  */
 import {
     BufferAttribute,
@@ -18,19 +12,11 @@ import {
     Side,
     type Scene3D,
 } from '@manycore/aholo-viewer';
-import type { GridCollision } from './grid-collision';
 import type { ManualCollisionData, ManualFloorCollision, ManualWallCollision } from './manual-collision';
 import type { Portal } from './portals';
 
 /** Drawn thickness of the floor slab. Purely visual; the collider is a half-space. */
 const SLAB = 0.1;
-/** How tall to draw wall cells. Shorter than the collider so the view stays open. */
-const WALL_DRAW_HEIGHT = 1.6;
-/** Half-size of the region drawn around the player, in metres. */
-const EXTENT = 9;
-/** Rebuild once the player has moved this far from the last centre. */
-const REBUILD_DISTANCE = 2;
-const PINK = 0xff3ea5;
 /** Portals get their own colours so they read as separate from the collider. */
 const PORTAL = 0x33bbff;
 const PORTAL_ACTIVE = 0xffd400;
@@ -117,78 +103,14 @@ function pushManualBox(
 
 export class CollisionDebugOverlay {
     private readonly scene: Scene3D;
-    private mesh: InstanceType<typeof Mesh> | undefined;
     private manualMesh: InstanceType<typeof Mesh> | undefined;
     private portalMesh: InstanceType<typeof Mesh> | undefined;
     private portalKey = '';
     private portalsVisible = true;
-    private lastCenter: { x: number; z: number } | undefined;
     private visible = false;
 
     constructor(scene: Scene3D) {
         this.scene = scene;
-    }
-
-    /** Rebuild the volumes when the player has moved far enough. */
-    update(grid: GridCollision | undefined, x: number, z: number): void {
-        if (!this.visible || !grid) {
-            return;
-        }
-        const c = this.lastCenter;
-        if (c && Math.hypot(x - c.x, z - c.z) < REBUILD_DISTANCE) {
-            return;
-        }
-        this.lastCenter = { x, z };
-        this.rebuild(grid, x, z);
-    }
-
-    private rebuild(grid: GridCollision, cx: number, cz: number): void {
-        const { nx, nz } = grid.dims;
-        const clamp = (v: number, hi: number) => Math.max(0, Math.min(hi - 1, v));
-        const x0 = clamp(grid.cellX(cx - EXTENT), nx);
-        const x1 = clamp(grid.cellX(cx + EXTENT), nx);
-        const z0 = clamp(grid.cellZ(cz - EXTENT), nz);
-        const z1 = clamp(grid.cellZ(cz + EXTENT), nz);
-
-        const positions: number[] = [];
-        const normals: number[] = [];
-        const floorY = grid.floorY;
-        const wallTop = Math.min(grid.wallTop, floorY + WALL_DRAW_HEIGHT);
-
-        for (let gx = x0; gx <= x1; gx++) {
-            for (let gz = z0; gz <= z1; gz++) {
-                const b = grid.cellBounds(gx, gz);
-                if (grid.isWalkableCell(gx, gz)) {
-                    // Floor tile under the walkable cell.
-                    pushBox(positions, normals, b.x0, floorY - SLAB, b.z0, b.x1, floorY, b.z1);
-                    continue;
-                }
-                // Wall, but only where it borders somewhere you can stand —
-                // otherwise the whole outside of the room turns into solid pink.
-                const border =
-                    grid.isWalkableCell(gx - 1, gz) ||
-                    grid.isWalkableCell(gx + 1, gz) ||
-                    grid.isWalkableCell(gx, gz - 1) ||
-                    grid.isWalkableCell(gx, gz + 1);
-                if (border) {
-                    pushBox(positions, normals, b.x0, floorY, b.z0, b.x1, wallTop, b.z1);
-                }
-            }
-        }
-
-        this.mesh?.removeFromParent?.();
-        this.mesh?.freeAllGpuResourceOwned?.();
-        this.mesh = undefined;
-        if (positions.length === 0) {
-            return;
-        }
-        const geometry = new BufferGeometry();
-        geometry.setAttribute('position', new BufferAttribute(new Float32Array(positions), 3));
-        geometry.setAttribute('normal', new BufferAttribute(new Float32Array(normals), 3));
-        const mesh = new Mesh(geometry as never, new MeshPhongMaterial({ color: PINK, side: Side.DoubleSide }));
-        mesh.visible = this.visible;
-        this.scene.add(mesh as never);
-        this.mesh = mesh;
     }
 
     /**
@@ -302,24 +224,14 @@ export class CollisionDebugOverlay {
 
     setVisible(visible: boolean): void {
         this.visible = visible;
-        if (this.mesh) {
-            this.mesh.visible = visible;
-        }
         if (this.manualMesh) {
             this.manualMesh.visible = visible;
         }
         // Portal markers are not touched: they belong to the 'portals' dev flag,
         // not the collision toggle.
-        if (!visible) {
-            // Force a rebuild next time it is switched on, so it re-centres.
-            this.lastCenter = undefined;
-        }
     }
 
     dispose(): void {
-        this.mesh?.removeFromParent?.();
-        this.mesh?.freeAllGpuResourceOwned?.();
-        this.mesh = undefined;
         this.manualMesh?.removeFromParent?.();
         this.manualMesh?.freeAllGpuResourceOwned?.();
         this.manualMesh = undefined;
