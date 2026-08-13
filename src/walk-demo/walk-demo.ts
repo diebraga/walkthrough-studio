@@ -570,7 +570,6 @@ export class ViewerWalkMode {
     } | null = null;
     private baseCollision: ViewerWalkMode['collision'] = null;
     private manualOverlay: ManualCollisionData | null = null;
-    private freeRoam = false;
 
     private enabled = false;
     private keys: Record<string, boolean> = {};
@@ -678,29 +677,8 @@ export class ViewerWalkMode {
         this.applyCollisionSource();
     }
 
-    /**
-     * Dev toggle: walk anywhere with nothing but an infinite floor underfoot —
-     * no walls to block movement or the third-person camera boom. Useful for
-     * previewing a character/animation without fighting a half-baked collision
-     * grid. Off restores whatever the scene + manual overlay would normally give.
-     */
-    setFreeRoam(enabled: boolean) {
-        this.freeRoam = enabled;
-        this.applyCollisionSource();
-    }
 
     private applyCollisionSource(): void {
-        if (this.freeRoam) {
-            const floorY = this.grid?.floorY ?? WALK_FLOOR_PLANE?.y ?? 0;
-            this.collision = new FloorPlaneCollision(undefined, {
-                y: floorY,
-                minX: -Infinity,
-                maxX: Infinity,
-                minZ: -Infinity,
-                maxZ: Infinity,
-            });
-            return;
-        }
         this.collision = this.manualOverlay
             ? new CombinedCollision(this.baseCollision, new ManualCollision(this.manualOverlay))
             : this.baseCollision;
