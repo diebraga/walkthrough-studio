@@ -2432,7 +2432,6 @@ class WalkDemoApp {
         viewMode: WalkViewMode;
         thirdPersonCharacter: WalkThirdPersonCharacterId;
         showCollision: boolean;
-        freeRoam: boolean;
         preset: WalkPresetId;
         fps: string;
         showPortals: boolean;
@@ -2473,12 +2472,6 @@ class WalkDemoApp {
             // Debug views default OFF and remember their last state, so a reload
             // never drops you into a scene full of debug geometry.
             showCollision: readDevToggle('showCollision'),
-            // Defaults ON (in dev builds only — see devEnabled below): an
-            // unrestricted floor-only collider is what you want while
-            // previewing a character/camera, not an opt-in extra. Gated by
-            // devEnabled so a production visitor always gets real collision
-            // even if this happens to be true in localStorage from dev use.
-            freeRoam: devEnabled('collision') && readDevToggle('freeRoam', true),
             // Separate from showCollision on purpose: the common case while
             // authoring is markers on with the collision overlay off.
             showPortals: readDevToggle('showPortals'),
