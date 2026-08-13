@@ -1019,22 +1019,6 @@ export class ViewerWalkMode {
         this.cameraRay.multiplyScalar(1 / distance);
         let blockedDistance = maxDistance;
         let blocked = false;
-        if (this.collision) {
-            const hit = this.collision.queryRay(
-                this.cameraTarget.x,
-                this.cameraTarget.y,
-                this.cameraTarget.z,
-                this.cameraRay.x,
-                this.cameraRay.y,
-                this.cameraRay.z,
-                distance,
-            );
-            if (hit) {
-                blockedDistance = Math.max(0.1, this.cameraTarget.distanceTo(new Vector3(hit.x, hit.y, hit.z)) - 0.18);
-                blocked = true;
-                this.thirdPersonOcclusionReleaseTimer = 0.1;
-            }
-        }
         if (!blocked && this.thirdPersonOcclusionReleaseTimer > 0) {
             this.thirdPersonOcclusionReleaseTimer = Math.max(0, this.thirdPersonOcclusionReleaseTimer - dt);
             blocked = this.thirdPersonOcclusionReleaseTimer > 0;
