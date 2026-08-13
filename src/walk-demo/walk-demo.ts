@@ -2838,21 +2838,21 @@ class WalkDemoApp {
     private aimPoint(): { x: number; z: number; yaw: number } | null {
         const walk = this.walk;
         if (!walk) return null;
-        const camera = walk.getCameraState();
-        const yaw = camera.rotation.y;
-        const pitch = camera.rotation.x;
+        const pose = walk.getPose();
+        const yaw = pose.yaw;
+        const pitch = 0;
         const cp = Math.cos(pitch);
         const dx = -Math.sin(yaw) * cp;
         const dy = Math.sin(pitch);
         const dz = -Math.cos(yaw) * cp;
         const floorY = this.currentFloorY();
-        if (dy < -0.01 && camera.position.y > floorY) {
-            const t = (floorY - camera.position.y) / dy;
+        const rayOriginY = pose.y + WALK_EYE_HEIGHT;
+        if (dy < -0.01 && rayOriginY > floorY) {
+            const t = (floorY - rayOriginY) / dy;
             if (t > 0 && t < 12) {
-                return { x: camera.position.x + dx * t, z: camera.position.z + dz * t, yaw };
+                return { x: pose.x + dx * t, z: pose.z + dz * t, yaw };
             }
         }
-        const pose = walk.getPose();
         return { x: pose.x - Math.sin(pose.yaw) * 1.5, z: pose.z - Math.cos(pose.yaw) * 1.5, yaw: pose.yaw };
     }
 
