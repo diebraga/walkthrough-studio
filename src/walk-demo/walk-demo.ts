@@ -2517,9 +2517,6 @@ class WalkDemoApp {
                 writeDevToggle('showCollision', this.params.showCollision);
                 this.collisionDebug?.setVisible(this.params.showCollision);
             });
-            pane.addButton({ title: 'Add floor collision' }).on('click', () => {
-                this.addManualFloorCollision();
-            });
             pane.addButton({ title: 'Add wall collision' }).on('click', () => {
                 this.addManualWallCollision();
             });
@@ -2861,6 +2858,9 @@ class WalkDemoApp {
         this.collisionDebug?.updateManualCollision(this.manualCollision);
     }
 
+    // Kept for backwards compatibility: disabled in UI but preserved in case historical
+    // .json files reference floor entries that need to be processed.
+    // @ts-expect-error - intentionally unused handler kept for data compatibility
     private addManualFloorCollision(): void {
         const point = this.aimPoint();
         if (!point) return;
