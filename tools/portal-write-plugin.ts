@@ -15,6 +15,16 @@ import type { Plugin } from "vite";
 export function portalWritePlugin(publicDir = "public"): Plugin {
     const root = resolve(publicDir);
 
+    const writeSceneFile = async (scenePath: string, fileName: string, payload: unknown) => {
+        const target = resolve(root, normalize(scenePath).replace(/^([/\\])+/, ""), fileName);
+        if (target !== root && !target.startsWith(root + sep)) {
+            throw new Error(`refusing to write outside ${publicDir}/`);
+        }
+        await mkdir(dirname(target), { recursive: true });
+        await writeFile(target, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+        return join(publicDir, scenePath, fileName);
+    };
+
     return {
         name: "walkthrough-portal-write",
         apply: "serve",
@@ -47,17 +57,46 @@ export function portalWritePlugin(publicDir = "public"): Plugin {
                             // Contain writes to public/. The request comes from
                             // localhost, but a path from the page should never be
                             // able to address the rest of the disk.
-                            const target = resolve(root, normalize(scenePath).replace(/^([/\\])+/, ""), "portals.json");
-                            if (target !== root && !target.startsWith(root + sep)) {
-                                throw new Error(`refusing to write outside ${publicDir}/`);
-                            }
-
-                            await mkdir(dirname(target), { recursive: true });
-                            await writeFile(target, `${JSON.stringify({ portals }, null, 2)}\n`, "utf8");
+                            const path = await writeSceneFile(scenePath, "portals.json", { portals });
 
                             res.statusCode = 200;
                             res.setHeader("content-type", "application/json");
-                            res.end(JSON.stringify({ ok: true, path: join(publicDir, scenePath, "portals.json") }));
+                            res.end(JSON.stringify({ ok: true, path }));
+                        } catch (error) {
+                            res.statusCode = 400;
+                            res.setHeader("content-type", "application/json");
+                            res.end(JSON.stringify({ ok: false, error: String((error as Error).message ?? error) }));
+                        }
+                    })();
+                });
+            });
+            server.middlewares.use("/__dev/manual-collision", (req, res) => {
+                if (req.method !== "POST") {
+                    res.statusCode = 405;
+                    res.end("POST only");
+                    return;
+                }
+
+                let body = "";
+                req.on("data", (chunk) => {
+                    body += chunk;
+                    if (body.length > 1_000_000) req.destroy();
+                });
+
+                req.on("end", () => {
+                    void (async () => {
+                        try {
+                            const { scenePath, collision } = JSON.parse(body) as {
+                                scenePath: string;
+                                collision: unknown;
+                            };
+                            if (typeof scenePath !== "string" || collision === null || typeof collision !== "object") {
+                                throw new Error("expected { scenePath: string, collision: object }");
+                            }
+                            const path = await writeSceneFile(scenePath, "manual-collision.json", collision);
+                            res.statusCode = 200;
+                            res.setHeader("content-type", "application/json");
+                            res.end(JSON.stringify({ ok: true, path }));
                         } catch (error) {
                             res.statusCode = 400;
                             res.setHeader("content-type", "application/json");

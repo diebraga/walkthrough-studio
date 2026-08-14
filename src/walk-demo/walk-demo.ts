@@ -50,6 +50,7 @@ import {
     type Portal,
 } from './portals';
 import { resolvePortalTeleport, type TeleportPose } from './teleport';
+import { loadLastPose, saveLastPose } from './saved-pose';
 import { flyVector } from './fly-mode';
 import { mobileJoystickInput } from './mobile-joystick';
 import { clampPitch, nextLookAngles } from './walk-look';
@@ -58,6 +59,15 @@ import { formatDeveloperPose } from './dev-position';
 import { splatUrl } from './asset-url';
 import { FloorPlaneCollision, type FloorPlaneOptions } from './floor-plane';
 import { GridCollision, type CollisionGridData } from './grid-collision';
+import {
+    CombinedCollision,
+    EMPTY_MANUAL_COLLISION,
+    ManualCollision,
+    eraseManualCollisionAt,
+    loadManualCollision,
+    saveManualCollision,
+    type ManualCollisionData,
+} from './manual-collision';
 
 /**
  * Synthetic floor for the local hall-3 scene, measured from the leveled splat:
@@ -513,6 +523,12 @@ const popcount = (n: number) => {
 
 const WALK_SIMULATION_STEP_SECONDS = 1 / 60;
 const MAX_SUBSTEPS = 10;
+// Cap any single frame's delta at this, so a backgrounded/stalled tab (e.g. an
+// OS overlay stealing focus) can't hand a multi-second delta downstream. Applied
+// once in onFrame() so it covers both the physics step and the avatar animation
+// mixer — an unclamped delta there scrubs the mixer far enough to land on a
+// random animation pose, which reads as the character "teleporting" mid-frame.
+const MAX_FRAME_DT_SECONDS = 1 / 20;
 const WALK_CAPSULE_HEIGHT = 1.5;
 const WALK_CAPSULE_RADIUS = 0.12;
 const WALK_HOVER_HEIGHT = 0.2;
@@ -559,6 +575,7 @@ export class ViewerWalkMode {
             out: { x: number; y: number; z: number },
         ) => boolean;
     } | null = null;
+    private manualOverlay: ManualCollisionData | null = null;
 
     private enabled = false;
     private keys: Record<string, boolean> = {};
@@ -582,6 +599,8 @@ export class ViewerWalkMode {
     private cameraIdealPosition = new Vector3();
     private cameraCollisionPosition = new Vector3();
     private cameraRay = new Vector3();
+    private prevPosition = new Vector3();
+    private renderPosition = new Vector3();
 
     private accumulator = 0;
     moveSpeed = 7;
@@ -626,7 +645,11 @@ export class ViewerWalkMode {
         document.addEventListener('visibilitychange', this.onVisibilityChange);
     }
 
-    /** Attach voxel collision data used by ground checks and capsule push-out. */
+    /**
+     * Voxel collision from the scan is unused: free roam always walks on the
+     * synthetic floor plane (see applyCollisionSource), so this is a no-op
+     * kept only so the scene-load fetch path has somewhere to hand the data.
+     */
     loadVoxelCollision(
         metadata: {
             gridBounds: { min: number[]; max: number[] };
@@ -637,26 +660,41 @@ export class ViewerWalkMode {
         nodes: Uint32Array,
         leafData: Uint32Array,
     ) {
-        // Voxel collision from the scan is disabled: the floor barely voxelizes
-        // and the walls it does produce are not wanted right now. The synthetic
-        // floor plane is the only collider. To bring the scan's geometry back,
-        // pass `new VoxelCollision(metadata, nodes, leafData)` as the first
-        // argument below — FloorPlaneCollision unions the two.
         void metadata;
         void nodes;
         void leafData;
-        this.collision = WALK_FLOOR_PLANE ? new FloorPlaneCollision(undefined, WALK_FLOOR_PLANE) : null;
     }
 
     /**
-     * Attach a baked walkable grid (tools/build-collision.mjs). This supplies
-     * BOTH colliders: the floor plane and the wall cells, so it replaces the
-     * voxel field entirely rather than being unioned with it.
+     * Attach a baked walkable grid (tools/build-collision.mjs). Its walls are
+     * no longer used for collision (free roam ignores them), but its floorY
+     * still anchors the synthetic floor plane and the portal markers.
      */
     loadCollisionGrid(data: CollisionGridData) {
-        const grid = new GridCollision(data);
-        this.grid = grid;
-        this.collision = grid;
+        this.grid = new GridCollision(data);
+        this.applyCollisionSource();
+    }
+
+    setManualCollision(data: ManualCollisionData) {
+        this.manualOverlay = data.floors.length || data.walls.length ? data : null;
+        this.applyCollisionSource();
+    }
+
+    /**
+     * Always walk on an infinite flat floor rather than fight the baked scene
+     * collision (walls, floor holes) — free roam is the only mode now.
+     * Manually placed wall/floor collision (dev panel "Add wall collision")
+     * still applies on top.
+     */
+    private applyCollisionSource(): void {
+        const base = new FloorPlaneCollision(undefined, {
+            y: this.grid?.floorY ?? WALK_FLOOR_PLANE?.y ?? 0,
+            minX: -Infinity,
+            maxX: Infinity,
+            minZ: -Infinity,
+            maxZ: Infinity,
+        });
+        this.collision = this.manualOverlay ? new CombinedCollision(base, new ManualCollision(this.manualOverlay)) : base;
     }
 
     private grid: GridCollision | undefined;
@@ -747,37 +785,53 @@ export class ViewerWalkMode {
         if (!this.enabled) {
             return;
         }
-        const dtClamped = Math.min(Math.max(0, dt), 1 / 20);
+        const dtClamped = Math.min(Math.max(0, dt), MAX_FRAME_DT_SECONDS);
         this.accumulator = Math.min(this.accumulator + dtClamped, MAX_SUBSTEPS * WALK_SIMULATION_STEP_SECONDS);
+        this.prevPosition.copy(this.position);
         while (this.accumulator >= WALK_SIMULATION_STEP_SECONDS) {
             this.step(WALK_SIMULATION_STEP_SECONDS);
             this.accumulator -= WALK_SIMULATION_STEP_SECONDS;
         }
-        this.updateCharacterPosition();
-        this.updateViewBlend(dtClamped);
 
-        if (this.viewBlend <= 0) {
-            this.cameraPosition.set(this.position.x, this.position.y, this.position.z);
-            this.cameraRotation.set(this.pitch, this.yaw, 0, 'YXZ');
-            return;
+        // Physics runs at a fixed 60Hz tick, but this method fires once per
+        // rendered frame at whatever rate the display refreshes (90/120/144Hz
+        // monitors are common). Rendering the raw simulated position leaves it
+        // frozen for a frame, then jumping — visible as judder/shaking on
+        // splats, which have no motion blur to hide it. Render from a position
+        // interpolated between the last two physics ticks instead; `position`
+        // itself stays the true simulation state for the next step().
+        const simPosition = this.position;
+        const alpha = this.accumulator / WALK_SIMULATION_STEP_SECONDS;
+        this.position = this.renderPosition.lerpVectors(this.prevPosition, simPosition, alpha);
+        try {
+            this.updateCharacterPosition();
+            this.updateViewBlend(dtClamped);
+
+            if (this.viewBlend <= 0) {
+                this.cameraPosition.set(this.position.x, this.position.y, this.position.z);
+                this.cameraRotation.set(this.pitch, this.yaw, 0, 'YXZ');
+                return;
+            }
+
+            // Fills cameraPosition/cameraRotation with the full third-person pose.
+            this.updateThirdPersonCamera(dtClamped);
+            if (this.viewBlend >= 1) {
+                return;
+            }
+
+            // Mid-transition: ease that pose back toward the first-person one. Both
+            // share yaw and have zero roll, so pitch is a plain scalar blend — no
+            // quaternion handling needed.
+            const t = this.viewBlend * this.viewBlend * (3 - 2 * this.viewBlend);
+            this.cameraPosition.set(
+                this.lerp(this.position.x, this.cameraPosition.x, t),
+                this.lerp(this.position.y, this.cameraPosition.y, t),
+                this.lerp(this.position.z, this.cameraPosition.z, t),
+            );
+            this.cameraRotation.set(this.lerp(this.pitch, this.cameraRotation.x, t), this.yaw, 0, 'YXZ');
+        } finally {
+            this.position = simPosition;
         }
-
-        // Fills cameraPosition/cameraRotation with the full third-person pose.
-        this.updateThirdPersonCamera(dtClamped);
-        if (this.viewBlend >= 1) {
-            return;
-        }
-
-        // Mid-transition: ease that pose back toward the first-person one. Both
-        // share yaw and have zero roll, so pitch is a plain scalar blend — no
-        // quaternion handling needed.
-        const t = this.viewBlend * this.viewBlend * (3 - 2 * this.viewBlend);
-        this.cameraPosition.set(
-            this.lerp(this.position.x, this.cameraPosition.x, t),
-            this.lerp(this.position.y, this.cameraPosition.y, t),
-            this.lerp(this.position.z, this.cameraPosition.z, t),
-        );
-        this.cameraRotation.set(this.lerp(this.pitch, this.cameraRotation.x, t), this.yaw, 0, 'YXZ');
     }
 
     /** Ease viewBlend toward whichever mode is selected. */
@@ -994,22 +1048,6 @@ export class ViewerWalkMode {
         this.cameraRay.multiplyScalar(1 / distance);
         let blockedDistance = maxDistance;
         let blocked = false;
-        if (this.collision) {
-            const hit = this.collision.queryRay(
-                this.cameraTarget.x,
-                this.cameraTarget.y,
-                this.cameraTarget.z,
-                this.cameraRay.x,
-                this.cameraRay.y,
-                this.cameraRay.z,
-                distance,
-            );
-            if (hit) {
-                blockedDistance = Math.max(0.1, this.cameraTarget.distanceTo(new Vector3(hit.x, hit.y, hit.z)) - 0.18);
-                blocked = true;
-                this.thirdPersonOcclusionReleaseTimer = 0.1;
-            }
-        }
         if (!blocked && this.thirdPersonOcclusionReleaseTimer > 0) {
             this.thirdPersonOcclusionReleaseTimer = Math.max(0, this.thirdPersonOcclusionReleaseTimer - dt);
             blocked = this.thirdPersonOcclusionReleaseTimer > 0;
@@ -2414,8 +2452,10 @@ class WalkDemoApp {
         portalStatus: string;
         insidePortal: string;
         positionStatus: string;
+        manualCollisionStatus: string;
     };
     private portals: Portal[] = [];
+    private manualCollision: ManualCollisionData = { ...EMPTY_MANUAL_COLLISION, floors: [], walls: [] };
     private portalsFolder: FolderApi | undefined;
     private portalRows: FolderApi[] = [];
     private collisionDebug: CollisionDebugOverlay | undefined;
@@ -2433,8 +2473,17 @@ class WalkDemoApp {
     private teleporting = false;
     private firstSceneLoad = true;
 
+    /** Remember where you were, so a reload lands you back instead of at spawn. */
+    private savePoseOnUnload = (): void => {
+        const walk = this.walk;
+        if (!walk) return;
+        const pose = walk.getPose();
+        saveLastPose(this.params.scheme, { px: pose.x, py: pose.y, pz: pose.z, yaw: pose.yaw, pitch: pose.pitch });
+    };
+
     constructor(ctx: RenderRuntime) {
         this.ctx = ctx;
+        window.addEventListener('pagehide', this.savePoseOnUnload);
         this.params = {
             scheme: 'indoor',
             viewMode: 'third',
@@ -2452,6 +2501,7 @@ class WalkDemoApp {
             portalStatus: '-',
             insidePortal: '-',
             positionStatus: '-',
+            manualCollisionStatus: '-',
         };
     }
 
@@ -2505,6 +2555,16 @@ class WalkDemoApp {
                 writeDevToggle('showCollision', this.params.showCollision);
                 this.collisionDebug?.setVisible(this.params.showCollision);
             });
+            pane.addButton({ title: 'Add wall collision' }).on('click', () => {
+                this.addManualWallCollision();
+            });
+            pane.addButton({ title: 'Erase collision' }).on('click', () => {
+                this.eraseManualCollision();
+            });
+            pane.addButton({ title: 'Save collision' }).on('click', () => {
+                void this.persistManualCollision();
+            });
+            pane.addBinding(this.params, 'manualCollisionStatus', { readonly: true, label: 'manual' });
         }
         // Developer setting: rendering preset and frame rate, for comparing the
         // 3dgs preset options. See docs/dev-settings.md.
@@ -2801,6 +2861,87 @@ class WalkDemoApp {
         }
     }
 
+    private currentFloorY(): number {
+        const walk = this.walk;
+        if (!walk) return this.manualCollision.floorY;
+        const pose = walk.getPose();
+        return this.manualCollision.floors.length || this.manualCollision.walls.length
+            ? this.manualCollision.floorY
+            : (walk.collisionGrid?.floorY ?? pose.y - WALK_HOVER_HEIGHT - WALK_EYE_HEIGHT);
+    }
+
+    private aimPoint(): { x: number; z: number; yaw: number } | null {
+        const walk = this.walk;
+        if (!walk) return null;
+        const pose = walk.getPose();
+        const yaw = pose.yaw;
+        const pitch = 0;
+        const cp = Math.cos(pitch);
+        const dx = -Math.sin(yaw) * cp;
+        const dy = Math.sin(pitch);
+        const dz = -Math.cos(yaw) * cp;
+        const floorY = this.currentFloorY();
+        const rayOriginY = pose.y + WALK_EYE_HEIGHT;
+        if (dy < -0.01 && rayOriginY > floorY) {
+            const t = (floorY - rayOriginY) / dy;
+            if (t > 0 && t < 12) {
+                return { x: pose.x + dx * t, z: pose.z + dz * t, yaw };
+            }
+        }
+        return { x: pose.x - Math.sin(pose.yaw) * 1.5, z: pose.z - Math.cos(pose.yaw) * 1.5, yaw: pose.yaw };
+    }
+
+    private applyManualCollision(): void {
+        this.walk?.setManualCollision(this.manualCollision);
+        this.collisionDebug?.updateManualCollision(this.manualCollision);
+    }
+
+    // Kept for backwards compatibility: disabled in UI but preserved in case historical
+    // .json files reference floor entries that need to be processed.
+    // @ts-expect-error - intentionally unused handler kept for data compatibility
+    private addManualFloorCollision(): void {
+        const point = this.aimPoint();
+        if (!point) return;
+        this.manualCollision = {
+            ...this.manualCollision,
+            floorY: this.currentFloorY(),
+            wallHeight: this.manualCollision.wallHeight || 2,
+            floors: [...this.manualCollision.floors, { x: point.x, z: point.z, width: 3, depth: 3 }],
+        };
+        this.params.manualCollisionStatus = `${this.manualCollision.floors.length} floor, ${this.manualCollision.walls.length} wall`;
+        this.applyManualCollision();
+    }
+
+    private addManualWallCollision(): void {
+        const point = this.aimPoint();
+        if (!point) return;
+        this.manualCollision = {
+            ...this.manualCollision,
+            floorY: this.currentFloorY(),
+            wallHeight: this.manualCollision.wallHeight || 2,
+            walls: [...this.manualCollision.walls, { x: point.x, z: point.z, width: 1.4, depth: 0.24, yaw: point.yaw }],
+        };
+        this.params.manualCollisionStatus = `${this.manualCollision.floors.length} floor, ${this.manualCollision.walls.length} wall`;
+        this.applyManualCollision();
+    }
+
+    private eraseManualCollision(): void {
+        const point = this.aimPoint();
+        if (!point) return;
+        this.manualCollision = eraseManualCollisionAt(this.manualCollision, point.x, point.z, 0.7);
+        this.params.manualCollisionStatus = `${this.manualCollision.floors.length} floor, ${this.manualCollision.walls.length} wall`;
+        this.applyManualCollision();
+    }
+
+    private async persistManualCollision(): Promise<void> {
+        const base = WALK_DEMO_SCHEMES[this.params.scheme].assetBase;
+        if (!base) return;
+        const error = await saveManualCollision(base, this.manualCollision);
+        this.params.manualCollisionStatus = error
+            ? `save failed: ${error}`
+            : `saved ${this.manualCollision.floors.length}/${this.manualCollision.walls.length}`;
+    }
+
     private insidePortalName: string | undefined;
     private frameCount = 0;
     private fpsSampledAt = performance.now();
@@ -2892,18 +3033,19 @@ class WalkDemoApp {
             return false;
         }
         const scheme = WALK_DEMO_SCHEMES[this.params.scheme];
-        walkLoop.update(delta);
+        const deltaClamped = Math.min(Math.max(0, delta), MAX_FRAME_DT_SECONDS);
+        walkLoop.update(deltaClamped);
         // Keep the avatar alive for the whole transition, not just while
         // third-person is selected, so it animates as the camera pulls away and
         // only disappears once the camera is back inside the head.
         const showAvatar = walkLoop.viewBlend > 0.02;
         if (showAvatar) {
-            sceneLoop.updateThirdPersonCharacter(walkLoop.getCharacterState(), delta);
+            sceneLoop.updateThirdPersonCharacter(walkLoop.getCharacterState(), deltaClamped);
         }
         sceneLoop.setThirdPersonEnabled(showAvatar);
         const walker = walkLoop.getCharacterState().position;
-        this.collisionDebug?.update(walkLoop.collisionGrid, walker.x, walker.z);
         this.updatePortalTrigger(walkLoop, walker.x, walker.z);
+        this.collisionDebug?.tick(deltaClamped);
         sceneLoop.updateCamera(walkLoop.getCameraState());
         if (scheme.splatMode === 'lod') {
             sceneLoop.tickLod();
@@ -3010,7 +3152,7 @@ class WalkDemoApp {
             if (generation !== this.reloadGeneration) {
                 return;
             }
-            const p = options.pose ?? scheme.pose;
+            const p = options.pose ?? loadLastPose(this.params.scheme) ?? scheme.pose;
             if (!options.pose) {
                 walk.startAtPose(new Vector3(p.px, p.py, p.pz), p.yaw, p.pitch);
             }
@@ -3021,6 +3163,10 @@ class WalkDemoApp {
             }
 
             await this.tryLoadCollision(walk, scene, scheme, reloadSignal);
+            this.manualCollision = scheme.assetBase
+                ? await loadManualCollision(scheme.assetBase, reloadSignal)
+                : { ...EMPTY_MANUAL_COLLISION, floors: [], walls: [] };
+            walk.setManualCollision(this.manualCollision);
             if (options.pose) {
                 walk.startAtPose(new Vector3(p.px, p.py, p.pz), p.yaw, p.pitch, { snapToGround: false });
                 walk.update(0);
@@ -3039,6 +3185,7 @@ class WalkDemoApp {
             this.collisionDebug = new CollisionDebugOverlay(this.ctx.renderer.scene);
             this.collisionDebug.setVisible(this.params.showCollision);
             this.collisionDebug.setPortalsVisible(this.params.showPortals);
+            this.collisionDebug.updateManualCollision(this.manualCollision);
 
             this.ctx.renderer.resize();
             this.running = true;
@@ -3130,6 +3277,7 @@ class WalkDemoApp {
 
     /** Stop walk mode and restore the original runtime camera. */
     dispose(): void {
+        window.removeEventListener('pagehide', this.savePoseOnUnload);
         this.reloadAbort?.abort();
         this.reloadAbort = undefined;
         this.reloadGeneration += 1;
