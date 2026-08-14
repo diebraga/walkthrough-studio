@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { health } from "./routes/health";
+import { health } from "./routes/health.js";
 
 /**
  * Shared, provider-independent API. Every deployment target (Vercel,

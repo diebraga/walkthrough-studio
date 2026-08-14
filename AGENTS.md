@@ -78,4 +78,9 @@ everything it needs, which becomes one row with a prefix. See
   thin per-provider translators around the one shared Hono app; a route added
   only under one of them exists for that provider alone. See
   [docs/api.md](docs/api.md).
+- **Relative imports in `server/`, `api/`, `adapters/` need a `.js` extension**
+  (`"../server/app.js"`, even though the file is `app.ts`) — Vercel's deployed
+  function runs unbundled under real Node ESM, which has no extension
+  fallback. Omitting it type-checks and works locally, then crashes only in
+  production. See [docs/api.md](docs/api.md#relative-imports-need-a-js-extension).
 - `npx tsc -b` and `npx vite build` should both pass before committing.

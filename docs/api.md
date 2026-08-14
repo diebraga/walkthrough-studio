@@ -25,6 +25,33 @@ to translate one platform's request/response shape into the Web-standard
 Keep `server/` itself free of provider APIs (no Node `req`/`res`, no AWS/Vercel
 SDK types) so it stays portable.
 
+## Relative imports need a `.js` extension
+
+`server/`, `api/`, and `adapters/` all use explicit extensions on relative
+imports, e.g. `import { app } from "../server/app.js"`, even though the
+file on disk is `app.ts`. `tsconfig.json` resolves that fine (`bundler`
+mode supports the `.js`-for-`.ts` convention), and it's what Vite already
+does.
+
+This isn't stylistic. `package.json` has `"type": "module"`, so anything
+that runs under real Node ESM — Vercel's production function — requires
+the exact, extension-complete specifier for a relative import; unlike
+CommonJS `require()`, there's no fallback resolution. Vercel builds this
+project's API with no `vercel.json`, so it has no bundler config telling
+it to bundle the function into one file: it transpiles each traced `.ts`
+file to a same-named `.js` file and imports between them at runtime like
+any other Node ESM code. Drop the extension and the entry point compiles
+and type-checks fine, works under `vite dev` (Vite's resolver fills in
+extensions itself) and in a bundled AWS Lambda build (esbuild `--bundle`
+inlines everything, so there's no import statement left to resolve) — and
+then crashes only in the deployed Vercel function with
+`ERR_MODULE_NOT_FOUND`, because that's the one place code actually runs
+unbundled under Node's own ESM loader.
+
+**Any new relative import inside `server/`, `api/`, or `adapters/` needs
+the `.js` extension.** `src/` is unaffected — Vite bundles it, so its
+`moduleResolution: "bundler"` extensionless imports stay as they are.
+
 ## How each provider reaches the app
 
 - **Vercel**: `api/[[...route]].ts` is Vercel's file-based catch-all for

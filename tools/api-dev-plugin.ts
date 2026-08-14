@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Plugin } from "vite";
-import { app } from "../server/app";
+import { app } from "../server/app.js";
 
 /**
  * Dev-only bridge: routes /api/* through the same Hono app used by the
