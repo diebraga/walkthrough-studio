@@ -38,6 +38,17 @@ test("accepts runtime-safe backend imports and matching browser rewrites", async
   assert.deepEqual(await checkProject(root), []);
 });
 
+test("ignores generated backend declarations", async () => {
+  const root = await fixture();
+  await mkdir(path.join(root, "server", "generated"), { recursive: true });
+  await writeFile(
+    path.join(root, "server", "generated", "client.d.ts"),
+    'export * from "./internal";\n',
+  );
+
+  assert.deepEqual(await checkProject(root), []);
+});
+
 test("rejects extensionless static, export-from, and dynamic backend imports", async () => {
   const root = await fixture({
     backend:

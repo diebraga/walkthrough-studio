@@ -1,4 +1,6 @@
 import { PrismaNeon } from "@prisma/adapter-neon";
+// @ts-ignore -- Vercel's function tracer omits generated .prisma declarations
+// from its secondary type pass, but includes the generated runtime files.
 import { PrismaClient } from "@prisma/client";
 
 export type DatabaseClient = PrismaClient;

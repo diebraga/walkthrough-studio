@@ -18,6 +18,7 @@ async function checkBackendImports(rootDir) {
   for (const directory of BACKEND_DIRS) {
     const files = await collectTypeScriptFiles(path.join(rootDir, directory));
     for (const file of files) {
+      if (relativePath(rootDir, file).startsWith("server/generated/")) continue;
       const sourceText = await readFile(file, "utf8");
       const sourceFile = ts.createSourceFile(file, sourceText, ts.ScriptTarget.Latest, true);
       visitModuleSpecifiers(sourceFile, (specifier, start) => {
