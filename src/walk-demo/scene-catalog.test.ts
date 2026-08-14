@@ -5,7 +5,15 @@ import {
   resolveSceneAssetUrl,
 } from "./scene-catalog";
 
-const collision = { floorY: -1.65, rotation: [[1, 0, 0], [0, 1, 0], [0, 0, 1]], walkable: "AA==" };
+const collision = {
+  cell: 0.15,
+  origin: [0, 0] as [number, number],
+  size: [1, 1] as [number, number],
+  floorY: -1.65,
+  wallHeight: 3.8,
+  rotation: [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+  walkable: "AA==",
+};
 const fixture = {
   place: {
     id: "place-1",
@@ -127,4 +135,3 @@ await assert.rejects(
   }),
   /Scene metadata request failed \(404\): Place not found/,
 );
-

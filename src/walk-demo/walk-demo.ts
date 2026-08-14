@@ -43,7 +43,6 @@ import {
 } from '../anneal';
 import {
     createPortal,
-    loadPortals,
     nextPortalName,
     portalAt,
     savePortals,
@@ -56,7 +55,6 @@ import { mobileJoystickInput } from './mobile-joystick';
 import { clampPitch, nextLookAngles } from './walk-look';
 import { splatFileTypeUrl } from './splat-file-type';
 import { formatDeveloperPose } from './dev-position';
-import { splatUrl } from './asset-url';
 import { FloorPlaneCollision, type FloorPlaneOptions } from './floor-plane';
 import { GridCollision, type CollisionGridData } from './grid-collision';
 import {
@@ -64,10 +62,11 @@ import {
     EMPTY_MANUAL_COLLISION,
     ManualCollision,
     eraseManualCollisionAt,
-    loadManualCollision,
     saveManualCollision,
     type ManualCollisionData,
 } from './manual-collision';
+import type { SceneCatalog } from './scene-catalog';
+import { createDatabaseSceneSchemes, type WalkDemoScheme } from './runtime-scenes';
 
 /**
  * Synthetic floor for the local hall-3 scene, measured from the leveled splat:
@@ -1317,16 +1316,9 @@ export class ViewerWalkMode {
 
 /** Aholo OSS walk assets (`oss-res` -> `node uploader/index.mjs gs:aholo`); indoor `gs_file/room/`, outdoor `gs_file/juguo/`. */
 /**
- * Scene assets. Layout mirrors the asset bucket (see docs/scene-assets.md):
- *   public/<property-slug>/<scene>/{index.ply, collision.json, collision-report.json}
- * The property slug is the key — an address, a warehouse, anything — and each
- * scene is one part of that place. Everything a scene needs is in one folder,
- * so adding a scene is dropping a folder in, not editing paths in several files.
+ * Database-backed scene metadata is adapted in scene-catalog.ts. Only the
+ * unrelated outdoor demo below remains a static legacy scene.
  */
-const SCENE_HALL = '/23_nashville_dr_tenessee/hall/';
-const SCENE_BALCONY = '/23_nashville_dr_tenessee/balcony/';
-const SPLAT_BASE_URL = String(import.meta.env.VITE_SPLAT_BASE_URL ?? '');
-
 const AHOLO_OSS_GS_FILE_BASE = 'https://holo-cos.aholo3d.cn/aholo-opensource/gs_file';
 /** Unused since indoor moved to the local hall-3 scene; kept for the upstream room assets. */
 void `${AHOLO_OSS_GS_FILE_BASE}/room/`;
@@ -2236,54 +2228,7 @@ class WalkDemoScene {
 // -----------------------------------------------------------------------------
 
 type WalkViewMode = 'first' | 'third' | 'fly';
-type WalkDemoSchemeId = 'indoor' | 'balcony' | 'outdoor';
-
-/** Initial capsule center and camera angles. */
-interface WalkDemoInitialPose {
-    px: number;
-    py: number;
-    pz: number;
-    yaw: number;
-    pitch: number;
-    thirdPersonDistance?: number;
-}
-
-interface WalkDemoScheme {
-    id: WalkDemoSchemeId;
-    splatMode: 'files' | 'lod';
-    splatCandidates?: readonly string[];
-    staticSplatUrls?: readonly string[];
-    lodMetaUrl?: string;
-    voxelJson?: string;
-    voxelBin?: string;
-    /** Baked walkable grid; when set it supersedes voxelJson/voxelBin. */
-    collisionGrid?: string;
-    /** Folder holding this scene's assets; portals.json is read/written here. */
-    assetBase?: string;
-    pose: WalkDemoInitialPose;
-}
-
-// Spawn for the local hall-3 scene: floor sits near y = -1.25 and the ceiling
-// near y = +2.0, so this drops the capsule into open space just above the floor.
-const WALK_DEMO_INDOOR_POSE: WalkDemoInitialPose = {
-    px: 0,
-    py: -0.4,
-    pz: 0,
-    yaw: 0,
-    pitch: 0,
-    thirdPersonDistance: 3.4,
-};
-
-const WALK_DEMO_BALCONY_POSE: WalkDemoInitialPose = {
-    px: 9.14,
-    py: 0.17,
-    pz: 3.09,
-    yaw: 0,
-    pitch: 0,
-    thirdPersonDistance: 3.4,
-};
-
-const WALK_DEMO_OUTDOOR_POSE: WalkDemoInitialPose = {
+const WALK_DEMO_OUTDOOR_POSE = {
     px: 20.398008,
     py: -0.15,
     pz: 62.773942,
@@ -2292,43 +2237,23 @@ const WALK_DEMO_OUTDOOR_POSE: WalkDemoInitialPose = {
     thirdPersonDistance: 3.6,
 };
 
-const WALK_DEMO_SCHEMES: Record<WalkDemoSchemeId, WalkDemoScheme> = {
-    // Local hall-3 scene. The source Brush export is y-down ("OpenCV -Y", as
-    // Brush exports are y-down ("OpenCV -Y") but ViewerWalkMode is y-up, so public/splat_hall_3.ply
-    // is the source rotated 180 deg about X. Collision was voxelized from that
-    // same rotated file, so splat and collision cannot drift apart. Regenerate with:
-    //   npx @playcanvas/splat-transform -w -g 0 <src>.ply -N -r 180,0,0 rot.ply
-    //   npx @playcanvas/splat-transform -w -g 0 rot.ply -B -30,-6,-30,30,8,30 \
-    //     --voxel-size 0.06 --voxel-external-fill --seed-pos 0,-0.6,0 \
-    //     public/voxel-hall-3/collision.voxel.json
-    indoor: {
-        id: 'indoor',
-        splatMode: 'files',
-        assetBase: SCENE_HALL,
-        splatCandidates: [splatUrl(SCENE_HALL, SPLAT_BASE_URL)],
-        // Baked by tools/build-collision.mjs; supplies floor AND walls, and is a
-        // few KB so it lands long before the splat finishes downloading.
-        collisionGrid: `${SCENE_HALL}collision.json`,
-        pose: WALK_DEMO_INDOOR_POSE,
-    },
-    balcony: {
-        id: 'balcony',
-        splatMode: 'files',
-        assetBase: SCENE_BALCONY,
-        splatCandidates: [`${splatUrl(SCENE_BALCONY, SPLAT_BASE_URL)}?v=brush-balcony-20260806`],
-        collisionGrid: `${SCENE_BALCONY}collision.json`,
-        pose: WALK_DEMO_BALCONY_POSE,
-    },
-    outdoor: {
+function createWalkDemoSchemes(catalog: SceneCatalog): Record<string, WalkDemoScheme> {
+    return {
+        ...createDatabaseSceneSchemes(catalog),
+        outdoor: {
         id: 'outdoor',
+        name: 'Outdoor',
+        slug: 'outdoor',
+        source: 'legacy',
         splatMode: 'lod',
         lodMetaUrl: `${WALK_OUTDOOR_URL_PREFIX}chunk-lod/0f9e3ae1/lod-meta.json`,
         staticSplatUrls: [`${WALK_OUTDOOR_URL_PREFIX}environment.d3e129aa.ply`],
         voxelJson: `${WALK_OUTDOOR_URL_PREFIX}voxel/309eccc1/collision.voxel-meta.json`,
         voxelBin: `${WALK_OUTDOOR_URL_PREFIX}voxel/309eccc1/collision.voxel.bin`,
         pose: WALK_DEMO_OUTDOOR_POSE,
-    },
-};
+        },
+    };
+}
 
 /** Outdoor juguo LOD stream cap (6M splats). */
 const WALK_OUTDOOR_LOD_MAX_BUDGET = 6_000_000;
@@ -2429,8 +2354,8 @@ function isWalkLodMeta(value: unknown): value is WalkLodMeta {
 // Render runtime entry and demo shell
 // -----------------------------------------------------------------------------
 
-export default async function runner(ctx: RenderRuntime): Promise<() => void> {
-    const app = new WalkDemoApp(ctx);
+export default async function runner(ctx: RenderRuntime, catalog: SceneCatalog): Promise<() => void> {
+    const app = new WalkDemoApp(ctx, catalog);
     await app.run();
     return () => {
         app.dispose();
@@ -2440,8 +2365,9 @@ export default async function runner(ctx: RenderRuntime): Promise<() => void> {
 /** Wires splats/LOD, collision, and walk mode on the render runtime. */
 class WalkDemoApp {
     private readonly ctx: RenderRuntime;
+    private readonly schemes: Record<string, WalkDemoScheme>;
     private params: {
-        scheme: WalkDemoSchemeId;
+        scheme: string;
         viewMode: WalkViewMode;
         thirdPersonCharacter: WalkThirdPersonCharacterId;
         showCollision: boolean;
@@ -2481,11 +2407,12 @@ class WalkDemoApp {
         saveLastPose(this.params.scheme, { px: pose.x, py: pose.y, pz: pose.z, yaw: pose.yaw, pitch: pose.pitch });
     };
 
-    constructor(ctx: RenderRuntime) {
+    constructor(ctx: RenderRuntime, catalog: SceneCatalog) {
         this.ctx = ctx;
+        this.schemes = createWalkDemoSchemes(catalog);
         window.addEventListener('pagehide', this.savePoseOnUnload);
         this.params = {
-            scheme: 'indoor',
+            scheme: catalog.initialNodeId,
             viewMode: 'third',
             // Changed from the upstream 'man' default.
             thirdPersonCharacter: 'robot',
@@ -2530,9 +2457,14 @@ class WalkDemoApp {
         });
         // Outdoor is intentionally left out; local property scenes stay listed.
         // The 'outdoor' scheme still exists, so re-adding it here is enough.
+        const sceneOptions = Object.fromEntries(
+            Object.values(this.schemes)
+                .filter((scheme) => scheme.source === 'database')
+                .map((scheme) => [scheme.name, scheme.id]),
+        );
         pane.addBinding(this.params, 'scheme', {
             label: ui.schemeLabel,
-            options: { [ui.schemeIndoor]: 'indoor', [ui.schemeBalcony]: 'balcony' },
+            options: sceneOptions,
         }).on('change', () => {
             // Upstream forced 'man' for indoor / 'robot' for outdoor here, which
             // would undo the robot default on the first scene switch. Keep
@@ -2636,7 +2568,7 @@ class WalkDemoApp {
     /** Record a portal where the walker is standing, then persist. */
     private async capturePortal(): Promise<void> {
         const walk = this.walk;
-        const base = WALK_DEMO_SCHEMES[this.params.scheme].assetBase;
+        const base = this.schemes[this.params.scheme].assetBase;
         if (!walk || !base) {
             return;
         }
@@ -2672,7 +2604,7 @@ class WalkDemoApp {
         for (const row of this.portalRows.splice(0)) {
             row.dispose();
         }
-        const base = WALK_DEMO_SCHEMES[this.params.scheme].assetBase;
+        const base = this.schemes[this.params.scheme].assetBase;
         for (const portal of this.portals) {
             // Collapsed by default: deleting takes expand-then-click, so a stray
             // click on the list cannot remove the wrong portal.
@@ -2709,7 +2641,7 @@ class WalkDemoApp {
                 console.log(`[portal] exited ${this.insidePortalName}`);
             }
             if (current) {
-                console.log(`[portal] entered ${current.name}`, current.to ? `-> ${current.to}` : '(no target yet)');
+                console.log(`[portal] entered ${current.name}`, current.toNodeId ? `-> ${current.toNodeId}` : '(no target yet)');
                 void this.teleportThroughPortal(current);
             }
             this.insidePortalName = current?.name;
@@ -2725,7 +2657,7 @@ class WalkDemoApp {
         if (this.teleporting) {
             return;
         }
-        const target = resolvePortalTeleport(portal, new Set(Object.keys(WALK_DEMO_SCHEMES) as WalkDemoSchemeId[]));
+        const target = resolvePortalTeleport(portal, new Set(Object.keys(this.schemes)));
         if (!target) {
             return;
         }
@@ -2934,7 +2866,7 @@ class WalkDemoApp {
     }
 
     private async persistManualCollision(): Promise<void> {
-        const base = WALK_DEMO_SCHEMES[this.params.scheme].assetBase;
+        const base = this.schemes[this.params.scheme].assetBase;
         if (!base) return;
         const error = await saveManualCollision(base, this.manualCollision);
         this.params.manualCollisionStatus = error
@@ -2962,7 +2894,7 @@ class WalkDemoApp {
             return;
         }
 
-        const scheme = WALK_DEMO_SCHEMES[this.params.scheme];
+        const scheme = this.schemes[this.params.scheme];
         scene.setThirdPersonModelUrl(WALK_THIRD_PERSON_CHARACTER_URLS[this.params.thirdPersonCharacter]);
         const walk = this.walk;
         if (walk) {
@@ -3011,7 +2943,7 @@ class WalkDemoApp {
     }
 
     /** Serialize scene reloads so rapid UI changes do not overlap. */
-    private queueReloadScene(options: { scheme?: WalkDemoSchemeId; pose?: TeleportPose; skipOpeningTransition?: boolean } = {}): Promise<void> {
+    private queueReloadScene(options: { scheme?: string; pose?: TeleportPose; skipOpeningTransition?: boolean } = {}): Promise<void> {
         this.reloadChain = this.reloadChain
             .then(() => this.reloadScene(options))
             .catch(error => {
@@ -3032,7 +2964,7 @@ class WalkDemoApp {
         if (!sceneLoop || !walkLoop) {
             return false;
         }
-        const scheme = WALK_DEMO_SCHEMES[this.params.scheme];
+        const scheme = this.schemes[this.params.scheme];
         const deltaClamped = Math.min(Math.max(0, delta), MAX_FRAME_DT_SECONDS);
         walkLoop.update(deltaClamped);
         // Keep the avatar alive for the whole transition, not just while
@@ -3072,7 +3004,7 @@ class WalkDemoApp {
     }
 
     /** Reload splats or LOD, avatar, walk mode, and voxel collision. */
-    private async reloadScene(options: { scheme?: WalkDemoSchemeId; pose?: TeleportPose; skipOpeningTransition?: boolean } = {}): Promise<void> {
+    private async reloadScene(options: { scheme?: string; pose?: TeleportPose; skipOpeningTransition?: boolean } = {}): Promise<void> {
         this.reloadAbort?.abort();
         this.reloadAbort = new AbortController();
         const reloadSignal = this.reloadAbort.signal;
@@ -3080,7 +3012,7 @@ class WalkDemoApp {
         if (options.scheme) {
             this.params.scheme = options.scheme;
         }
-        const scheme = WALK_DEMO_SCHEMES[this.params.scheme];
+        const scheme = this.schemes[this.params.scheme];
         const useOpeningTransition = this.firstSceneLoad && !options.skipOpeningTransition;
 
         this.running = false;
@@ -3163,8 +3095,12 @@ class WalkDemoApp {
             }
 
             await this.tryLoadCollision(walk, scene, scheme, reloadSignal);
-            this.manualCollision = scheme.assetBase
-                ? await loadManualCollision(scheme.assetBase, reloadSignal)
+            this.manualCollision = scheme.manualCollision
+                ? {
+                    ...scheme.manualCollision,
+                    floors: [...scheme.manualCollision.floors],
+                    walls: [...scheme.manualCollision.walls],
+                }
                 : { ...EMPTY_MANUAL_COLLISION, floors: [], walls: [] };
             walk.setManualCollision(this.manualCollision);
             if (options.pose) {
@@ -3174,7 +3110,7 @@ class WalkDemoApp {
                 this.ctx.renderer.render();
             }
 
-            this.portals = scheme.assetBase ? await loadPortals(scheme.assetBase, reloadSignal) : [];
+            this.portals = scheme.portals ? scheme.portals.map((portal) => ({ ...portal })) : [];
             this.rebuildPortalList();
 
             if (generation !== this.reloadGeneration) {
@@ -3214,19 +3150,15 @@ class WalkDemoApp {
         scheme: WalkDemoScheme,
         signal: AbortSignal,
     ): Promise<void> {
-        // A baked walkable grid provides floor and walls together, so it wins
-        // over the voxel pair when present.
-        if (scheme.collisionGrid) {
-            const res = await fetch(scheme.collisionGrid, { signal });
-            if (!res.ok) {
-                console.warn(`[walk] Collision grid not OK (${res.status}); walking without collision.`);
-                return;
-            }
-            const text = await res.text();
+        // Database collision is already structured JSON from Neon, so no
+        // collision.json request is made for migrated scene nodes.
+        if (scheme.collisionData) {
             throwIfAborted(signal);
-            const grid = JSON.parse(text) as CollisionGridData;
+            const grid = scheme.collisionData;
             walk.loadCollisionGrid(grid);
-            scene.setLevellingRotation(grid.rotation);
+            if (grid.rotation) {
+                scene.setLevellingRotation(grid.rotation);
+            }
             return;
         }
 

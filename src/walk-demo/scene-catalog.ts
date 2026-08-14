@@ -1,4 +1,5 @@
 import { EMPTY_MANUAL_COLLISION, type ManualCollisionData } from "./manual-collision";
+import type { CollisionGridData } from "./grid-collision";
 
 export interface SceneAssetDto {
     id: string;
@@ -70,7 +71,7 @@ export interface RuntimeSceneNode {
     slug: string;
     name: string;
     splatUrl: string;
-    collisionData: Record<string, unknown>;
+    collisionData: CollisionGridData;
     manualCollision: ManualCollisionData;
     portals: RuntimeScenePortal[];
     assetBase: string;
@@ -108,6 +109,17 @@ const NODE_POSES: Record<string, RuntimeScenePose> = {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isCollisionGridData(value: unknown): value is CollisionGridData {
+    if (!isRecord(value)) return false;
+    return typeof value.cell === "number"
+        && Array.isArray(value.origin) && value.origin.length === 2 && value.origin.every((item) => typeof item === "number")
+        && Array.isArray(value.size) && value.size.length === 2 && value.size.every((item) => typeof item === "number")
+        && typeof value.floorY === "number"
+        && typeof value.wallHeight === "number"
+        && typeof value.walkable === "string"
+        && (value.rotation === undefined || Array.isArray(value.rotation));
 }
 
 function staticPath(originalPath: string): string {
@@ -163,7 +175,7 @@ export function adaptSceneCatalog(
         if (!splat) {
             throw new Error(`Scene node '${node.slug}' has no Gaussian splat asset.`);
         }
-        if (!isRecord(node.collisionData)) {
+        if (!isCollisionGridData(node.collisionData)) {
             throw new Error(`Scene node '${node.slug}' has invalid collision data.`);
         }
         const portals = node.portals.map((portal): RuntimeScenePortal => {

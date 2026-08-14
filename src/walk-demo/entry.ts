@@ -10,6 +10,9 @@ import {
 } from "@manycore/aholo-viewer";
 import runner from "./walk-demo";
 import { createRenderRuntime, type RenderRuntime } from "./render-runtime";
+import { fetchSceneCatalog } from "./scene-catalog";
+
+const ACTIVE_PLACE_SLUG = "23_nashville_dr_tenessee";
 
 /**
  * Placeholder when the demo scene can't load (Aholo's splat/GLB CDN is
@@ -60,7 +63,11 @@ export function start(container: HTMLElement): () => void {
     return () => runtime.dispose();
   }
 
-  runner(runtime)
+  fetchSceneCatalog(ACTIVE_PLACE_SLUG, {
+    splatBaseUrl: String(import.meta.env.VITE_SPLAT_BASE_URL ?? ""),
+    signal: runtime.signal,
+  })
+    .then((catalog) => runner(runtime, catalog))
     .then((stop) => {
       stopDemo = stop;
     })

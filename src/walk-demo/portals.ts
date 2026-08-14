@@ -11,12 +11,16 @@
  */
 
 export interface Portal {
+    /** Persistent database identity when this portal came from Neon. */
+    id?: string;
     name: string;
     position: { x: number; y: number; z: number };
     /** Facing at capture time; becomes the arrival direction when linked. */
     yaw: number;
     /** Trigger radius in metres, measured on the ground plane. */
     radius: number;
+    /** Immutable destination identity for database-backed portals. */
+    toNodeId?: string | null;
     /** Target scene. Null until scenes are linked. */
     to: string | null;
     /** Arrival pose in the target scene. Null until scenes are linked. */
@@ -82,7 +86,7 @@ export function createPortal(
     yaw: number,
     radius = DEFAULT_RADIUS,
 ): Portal {
-    return { name, position: { x, y, z }, yaw, radius, to: null, spawn: null };
+    return { name, position: { x, y, z }, yaw, radius, toNodeId: null, to: null, spawn: null };
 }
 
 /**
