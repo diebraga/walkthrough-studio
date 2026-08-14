@@ -94,3 +94,34 @@ derived artefacts.
 
 A fresh clone can read metadata from Neon, but local static splat delivery still
 requires the files or a configured `VITE_SPLAT_BASE_URL`.
+
+## Publishing production splats to R2
+
+Production splats for this project live in the `walkthrough-studio-assets` R2
+bucket. Object keys preserve the authoring layout beneath `public/`:
+
+```
+<property-slug>/<scene>/index.ply
+<property-slug>/<scene>/index.spz
+```
+
+The checked-in browser-read policy is `config/r2-cors.json`. Apply it from the
+repository root with:
+
+```bash
+npx wrangler r2 bucket cors set walkthrough-studio-assets --file config/r2-cors.json
+```
+
+Upload the current Nashville assets under their stable runtime keys with:
+
+```bash
+npx wrangler r2 object put walkthrough-studio-assets/23_nashville_dr_tenessee/hall/index.ply --file public/23_nashville_dr_tenessee/hall/index.ply --content-type application/octet-stream --remote
+npx wrangler r2 object put walkthrough-studio-assets/23_nashville_dr_tenessee/balcony/index.spz --file public/23_nashville_dr_tenessee/balcony/index.spz --content-type application/octet-stream --remote
+```
+
+Public delivery must be enabled before the database or deployment points at
+these objects. The temporary public origin is
+`https://pub-2f0997dc6b2d4c8a889774c90c20f77f.r2.dev`; use that HTTPS origin as
+`VITE_SPLAT_BASE_URL` until a project custom hostname replaces it. Verify both
+object URLs and their production-origin CORS preflights before changing runtime
+metadata. Never commit Cloudflare credentials or account identifiers.
