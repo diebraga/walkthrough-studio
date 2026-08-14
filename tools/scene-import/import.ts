@@ -53,6 +53,16 @@ export async function persistSceneImport(
         });
         nodeIds.set(nodeKey(place.slug, node.slug), nodeRecord.id);
 
+        const originalPaths = node.assets.map((asset) => asset.originalPath);
+        await tx.sceneAsset.deleteMany({
+          where: originalPaths.length
+            ? {
+                sceneNodeId: nodeRecord.id,
+                originalPath: { notIn: originalPaths },
+              }
+            : { sceneNodeId: nodeRecord.id },
+        });
+
         for (const asset of node.assets) {
           await tx.sceneAsset.upsert({
             where: {

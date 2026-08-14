@@ -60,6 +60,7 @@ function fakeDatabase() {
   const nodes = new Map<string, { id: string }>();
   const assets = new Map<string, { id: string }>();
   const portals = new Map<string, { id: string; data: Record<string, unknown> }>();
+  const sceneAssetDeleteCalls: Array<{ where: Record<string, unknown> }> = [];
   let sequence = 0;
   const id = () => `id-${++sequence}`;
   const transaction = {
@@ -72,7 +73,7 @@ function fakeDatabase() {
     sceneNode: {
       upsert: async ({ where }: { where: { placeId_slug: { placeId: string; slug: string } } }) => {
         const key = `${where.placeId_slug.placeId}:${where.placeId_slug.slug}`;
-        if (!nodes.has(key)) nodes.set(key, { id: id() });
+        if (!nodes.has(key)) nodes.set(key, { id: `node-${where.placeId_slug.slug}` });
         return nodes.get(key)!;
       },
     },
@@ -81,6 +82,16 @@ function fakeDatabase() {
         const key = `${where.sceneNodeId_originalPath.sceneNodeId}:${where.sceneNodeId_originalPath.originalPath}`;
         if (!assets.has(key)) assets.set(key, { id: id() });
         return assets.get(key)!;
+      },
+      deleteMany: async ({ where }: { where: Record<string, unknown> }) => {
+        sceneAssetDeleteCalls.push({ where });
+        const sceneNodeId = String(where.sceneNodeId);
+        const notIn = (where.originalPath as { notIn?: string[] } | undefined)?.notIn;
+        for (const key of assets.keys()) {
+          const [assetNodeId, originalPath] = key.split(":");
+          if (assetNodeId !== sceneNodeId) continue;
+          if (!notIn || !notIn.includes(originalPath)) assets.delete(key);
+        }
       },
     },
     portal: {
@@ -95,7 +106,7 @@ function fakeDatabase() {
   const database = {
     $transaction: async <T>(operation: (tx: typeof transaction) => Promise<T>) => operation(transaction),
   } as unknown as DatabaseClient;
-  return { database, places, nodes, assets, portals };
+  return { database, places, nodes, assets, portals, sceneAssetDeleteCalls };
 }
 
 test("upserts the graph idempotently and resolves portal node IDs", async () => {
@@ -113,8 +124,8 @@ test("upserts the graph idempotently and resolves portal node IDs", async () => 
   assert.equal([...fake.portals.values()][0].id, firstPortalId);
 
   const portal = [...fake.portals.values()][0].data;
-  assert.match(String(portal.fromNodeId), /^id-/);
-  assert.match(String(portal.toNodeId), /^id-/);
+  assert.match(String(portal.fromNodeId), /^node-/);
+  assert.match(String(portal.toNodeId), /^node-/);
   assert.notEqual(portal.fromNodeId, portal.toNodeId);
   assert.equal(portal.positionX, 1);
   assert.equal(portal.spawnPitch, 9);
@@ -133,4 +144,79 @@ test("rejects unresolved portal destinations before opening a transaction", asyn
     /portal destination "missing" does not exist in place "sample"/,
   );
   assert.equal(transactions, 0);
+});
+
+test("deletes stale scene assets while retaining the planned originals", async () => {
+  const fake = fakeDatabase();
+  fake.assets.set("node-balcony:public/sample_place/balcony/stale.ply", { id: "stale" });
+  const plan: SceneImportPlan = {
+    places: [{
+      slug: "sample_place",
+      name: "Sample Place",
+      description: null,
+      metadata: null,
+      nodes: [{
+        slug: "balcony",
+        name: "Balcony",
+        collisionData: null,
+        metadata: null,
+        assets: [
+          {
+            type: "GAUSSIAN_SPLAT",
+            objectKey: "sample_place/balcony/index.spz",
+            originalPath: "public/sample_place/balcony/index.spz",
+            mimeType: "application/octet-stream",
+            sizeBytes: 8,
+            metadata: null,
+          },
+          {
+            type: "COLLISION",
+            objectKey: null,
+            originalPath: "public/sample_place/balcony/manual-collision.json",
+            mimeType: "application/json",
+            sizeBytes: 2,
+            metadata: null,
+          },
+        ],
+        portals: [],
+      }],
+    }],
+  };
+
+  await persistSceneImport(fake.database, plan);
+
+  assert.deepEqual(fake.sceneAssetDeleteCalls, [{
+    where: {
+      sceneNodeId: "node-balcony",
+      originalPath: {
+        notIn: [
+          "public/sample_place/balcony/index.spz",
+          "public/sample_place/balcony/manual-collision.json",
+        ],
+      },
+    },
+  }]);
+  assert.equal(fake.assets.has("node-balcony:public/sample_place/balcony/stale.ply"), false);
+});
+
+test("deletes all scene assets when the plan has no assets", async () => {
+  const fake = fakeDatabase();
+  await persistSceneImport(fake.database, {
+    places: [{
+      slug: "sample_place",
+      name: "Sample Place",
+      description: null,
+      metadata: null,
+      nodes: [{
+        slug: "empty",
+        name: "Empty",
+        collisionData: null,
+        metadata: null,
+        assets: [],
+        portals: [],
+      }],
+    }],
+  });
+
+  assert.deepEqual(fake.sceneAssetDeleteCalls, [{ where: { sceneNodeId: "node-empty" } }]);
 });
