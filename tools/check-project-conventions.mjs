@@ -9,6 +9,7 @@ const RUNTIME_EXTENSIONS = new Set([".js", ".mjs", ".cjs", ".json"]);
 export async function checkProject(rootDir) {
   return [
     ...(await checkBackendImports(rootDir)),
+    ...(await checkMountedServerRouteDepth(rootDir)),
     ...(await checkBrowserRouteRewrites(rootDir)),
   ];
 }
@@ -29,6 +30,36 @@ async function checkBackendImports(rootDir) {
         );
       });
     }
+  }
+  return violations;
+}
+
+async function checkMountedServerRouteDepth(rootDir) {
+  const violations = [];
+  const files = await collectTypeScriptFiles(path.join(rootDir, "server", "routes"));
+  const routeMethods = new Set(["get", "post", "put", "patch", "delete", "options", "all"]);
+  for (const file of files) {
+    if (/\.test\.tsx?$/.test(file)) continue;
+    const sourceText = await readFile(file, "utf8");
+    const sourceFile = ts.createSourceFile(file, sourceText, ts.ScriptTarget.Latest, true);
+    function visit(node) {
+      if (
+        ts.isCallExpression(node) &&
+        ts.isPropertyAccessExpression(node.expression) &&
+        routeMethods.has(node.expression.name.text) &&
+        node.arguments.length > 0 &&
+        ts.isStringLiteralLike(node.arguments[0]) &&
+        node.arguments[0].text !== "/"
+      ) {
+        const routePath = node.arguments[0].text;
+        const { line } = sourceFile.getLineAndCharacterOfPosition(node.arguments[0].getStart(sourceFile));
+        violations.push(
+          `${relativePath(rootDir, file)}:${line + 1}: nested Hono path "${routePath}" is unreachable through Vercel; use the mounted route root and query parameters`,
+        );
+      }
+      ts.forEachChild(node, visit);
+    }
+    visit(sourceFile);
   }
   return violations;
 }

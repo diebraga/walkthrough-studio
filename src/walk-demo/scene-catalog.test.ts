@@ -131,7 +131,10 @@ assert.throws(
 
 await assert.rejects(
   fetchSceneCatalog("missing", {
-    fetcher: async () => new Response(JSON.stringify({ error: "Place not found" }), { status: 404 }),
+    fetcher: async (input) => {
+      assert.equal(input, "/api/scenes?place=missing");
+      return new Response(JSON.stringify({ error: "Place not found" }), { status: 404 });
+    },
   }),
   /Scene metadata request failed \(404\): Place not found/,
 );

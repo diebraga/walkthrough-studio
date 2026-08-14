@@ -36,7 +36,7 @@ many scenes.
 
 Neon Postgres is the canonical runtime source for places, nodes, collision,
 asset references, and portals. The frontend obtains one place graph through
-`GET /api/scenes/:placeSlug`; it does not discover nodes or relationships by
+`GET /api/scenes?place=<slug>`; it does not discover nodes or relationships by
 walking these folders.
 
 `public/` remains the import and developer-authoring source. The importer turns

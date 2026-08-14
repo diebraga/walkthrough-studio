@@ -72,12 +72,12 @@ assert.deepEqual(body.places[0].nodes[0].portals[0], {
   toNodeName: "Balcony",
 });
 
-const placeResponse = await route.request("/sample");
+const placeResponse = await route.request("/?place=sample");
 assert.equal(placeResponse.status, 200);
 const placeBody = await placeResponse.json();
 assert.equal(placeBody.place.slug, "sample");
 assert.equal(placeBody.place.nodes[0].assets[0].sizeBytes, "163141743");
 
-const missingResponse = await route.request("/missing");
+const missingResponse = await route.request("/?place=missing");
 assert.equal(missingResponse.status, 404);
 assert.deepEqual(await missingResponse.json(), { error: "Place not found" });

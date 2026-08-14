@@ -159,15 +159,16 @@ export function createScenesRoute(readers: SceneReaders = {
 }): Hono {
   const route = new Hono();
   route.get("/", async (c) => {
+    const placeSlug = c.req.query("place");
+    if (placeSlug) {
+      const place = await readers.readBySlug(placeSlug);
+      if (!place) {
+        return c.json({ error: "Place not found" }, 404);
+      }
+      return c.json({ place: serializePlace(place) });
+    }
     const places = await readers.readAll();
     return c.json({ places: places.map(serializePlace) });
-  });
-  route.get("/:placeSlug", async (c) => {
-    const place = await readers.readBySlug(c.req.param("placeSlug"));
-    if (!place) {
-      return c.json({ error: "Place not found" }, 404);
-    }
-    return c.json({ place: serializePlace(place) });
   });
   return route;
 }

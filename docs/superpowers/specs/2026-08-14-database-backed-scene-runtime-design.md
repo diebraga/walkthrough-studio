@@ -24,10 +24,11 @@ demo is not imported and remains an explicitly legacy static scheme.
 ### API
 
 Retain `GET /api/scenes` for graph listing and add
-`GET /api/scenes/:placeSlug` for the runtime. Both routes use a shared Prisma
+`GET /api/scenes?place=<slug>` for the runtime. Both response modes use a shared Prisma
 selection and serializer, including all nodes, collision JSON, asset references,
 and outgoing portal destinations. The place route returns `404` for an unknown
-slug. It does not expose Prisma or database credentials.
+slug. A query parameter is required because Vercel's generated route reaches
+only one path segment after `/api`. It does not expose Prisma or database credentials.
 
 The Prisma query loads the graph with nested `select` clauses in one request;
 there is no query per node, asset, or portal.

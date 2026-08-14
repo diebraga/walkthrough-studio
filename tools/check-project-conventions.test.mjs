@@ -62,6 +62,18 @@ test("rejects extensionless static, export-from, and dynamic backend imports", a
   assert.match(violations[2], /server\/app\.ts:3.*\.\/lazy.*\.js/);
 });
 
+test("rejects nested handlers under mounted server routes", async () => {
+  const root = await fixture();
+  await writeFile(
+    path.join(root, "server", "routes", "scenes.ts"),
+    'route.get("/", list);\nroute.get("/:placeSlug", detail);\n',
+  );
+
+  assert.deepEqual(await checkProject(root), [
+    'server/routes/scenes.ts:2: nested Hono path "/:placeSlug" is unreachable through Vercel; use the mounted route root and query parameters',
+  ]);
+});
+
 test("rejects a browser route without an exact SPA rewrite", async () => {
   const root = await fixture({ rewrites: [] });
 

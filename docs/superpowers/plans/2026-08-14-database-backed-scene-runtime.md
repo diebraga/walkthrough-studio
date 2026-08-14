@@ -28,7 +28,7 @@
 
 **Interfaces:**
 - Produces: `readPlaceSceneGraph(slug: string): Promise<SceneGraphPlace | null>`
-- Produces: `GET /api/scenes/:placeSlug` returning `{ place: SerializedSceneGraphPlace }` or `{ error: "Place not found" }`
+- Produces: `GET /api/scenes?place=<slug>` returning `{ place: SerializedSceneGraphPlace }` or `{ error: "Place not found" }`
 - Retains: `GET /api/scenes` returning `{ places: SerializedSceneGraphPlace[] }`
 
 - [ ] **Step 1: Write failing API tests**
@@ -43,7 +43,7 @@ Expected: failure because the slug route/reader does not exist.
 
 - [ ] **Step 3: Implement the shared query and serializer**
 
-Extract the nested Prisma selection and serialization into shared functions. Query a place with `findUnique({ where: { slug }, select: sceneGraphSelect })`; preserve the existing list query and response shape. Register `/:placeSlug` after `/` and return the explicit `404` body.
+Extract the nested Prisma selection and serialization into shared functions. Query a place with `findUnique({ where: { slug }, select: sceneGraphSelect })`; preserve the existing list query and response shape. Select one place when the root handler receives `?place=<slug>` and return the explicit `404` body. Nested Hono paths are forbidden because Vercel rejects them before invoking this function.
 
 - [ ] **Step 4: Run the focused test and verify GREEN**
 
@@ -126,7 +126,7 @@ Expected: failure because teleport still uses `portal.to` and runtime schemes ar
 
 - [ ] **Step 3: Inject the catalog into startup and renderer**
 
-Fetch `/api/scenes/23_nashville_dr_tenessee` in `entry.ts` before calling `runner`. Build runtime schemes from catalog nodes and append the isolated outdoor legacy scheme. Replace fixed union keys with string node IDs, render database node names in the control panel, select hall initially, and preserve node poses through the existing pose persistence.
+Fetch `/api/scenes?place=23_nashville_dr_tenessee` in `entry.ts` before calling `runner`. Build runtime schemes from catalog nodes and append the isolated outdoor legacy scheme. Replace fixed union keys with string node IDs, render database node names in the control panel, select hall initially, and preserve node poses through the existing pose persistence.
 
 - [ ] **Step 4: Use database metadata in reload**
 
@@ -198,7 +198,7 @@ git commit -m "docs: make Neon canonical for scene metadata"
 - No expected source changes unless production evidence reveals a defect.
 
 **Interfaces:**
-- Verifies: `https://walkthrough-studio-kohl.vercel.app/api/scenes/23_nashville_dr_tenessee`
+- Verifies: `https://walkthrough-studio-kohl.vercel.app/api/scenes?place=23_nashville_dr_tenessee`
 - Verifies: deployed `/` renderer and hall-to-balcony transition
 
 - [ ] **Step 1: Push the verified commit**

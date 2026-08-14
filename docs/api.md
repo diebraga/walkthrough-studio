@@ -10,7 +10,7 @@ server/
   app.ts            shared Hono app, basePath("/api"), routes mounted here
   routes/
     health.ts        GET /api/health -> { ok: true }
-    scenes.ts        GET /api/scenes and /api/scenes/:placeSlug -> scene graph
+    scenes.ts        GET /api/scenes[?place=<slug>] -> scene graph
 api/
   [[...route]].ts    Vercel catch-all, exports server/app.ts's Hono app directly
 adapters/
@@ -145,8 +145,14 @@ Prisma client. It returns places with nodes, asset references, structured
 collision data, and directional portals. Asset byte sizes are decimal strings
 because JavaScript JSON cannot encode `bigint` values.
 
-`GET /api/scenes/:placeSlug` returns one frontend-ready place graph as
+`GET /api/scenes?place=<slug>` returns one frontend-ready place graph as
 `{ place }`, or `404 { "error": "Place not found" }`. The renderer calls this
 once at startup rather than requesting collision, assets, and portals
 separately. Both endpoints share the same nested Prisma selection and
 serializer.
+
+Use a query parameter rather than a nested Hono path here. Vercel currently
+generates `^/api/([^/]+)$` for this project's `api/[[...route]].ts`, so a nested
+path such as `/api/scenes/<slug>` is rejected by Vercel before Hono runs.
+`pnpm check:conventions` rejects nested handlers in mounted `server/routes/`
+modules to prevent a local-only route from shipping again.

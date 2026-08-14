@@ -56,7 +56,7 @@ splats remain external assets.
 
 | Concern | Source |
 |---|---|
-| place/node/collision/portal metadata | Neon via `GET /api/scenes/:placeSlug` |
+| place/node/collision/portal metadata | Neon via `GET /api/scenes?place=<slug>` |
 | `.ply` and other heavy assets | static/object storage, referenced by `SceneAsset` |
 | `public/<property>/<node>/*.json` | import and dev-authoring source, not runtime authority |
 | default camera pose | presentation config in `scene-catalog.ts` until modeled |
@@ -97,6 +97,11 @@ See [docs/scene-assets.md](docs/scene-assets.md) for the import/asset boundary.
   code must use node IDs and API relationships rather than constructing
   collision or portal relationships from `public/` paths. Heavy assets remain
   external and are resolved from `SceneAsset` references.
+- **Mounted Hono route modules only define their `/` handler.** This Vercel
+  project's generated optional catch-all reaches one segment after `/api`, so
+  nested handlers such as `/api/scenes/:slug` never reach Hono. Use query
+  parameters on the mounted route (`/api/scenes?place=<slug>`). The convention
+  checker rejects nested handlers under `server/routes/`.
 - **Relative imports in `server/`, `api/`, `adapters/` need a `.js` extension**
   (`"../server/app.js"`, even though the file is `app.ts`) — Vercel's deployed
   function runs unbundled under real Node ESM, which has no extension

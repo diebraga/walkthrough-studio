@@ -228,7 +228,7 @@ interface FetchSceneCatalogOptions {
 
 export async function fetchSceneCatalog(placeSlug: string, options: FetchSceneCatalogOptions = {}): Promise<SceneCatalog> {
     const fetcher = options.fetcher ?? fetch;
-    const response = await fetcher(`/api/scenes/${encodeURIComponent(placeSlug)}`, { signal: options.signal });
+    const response = await fetcher(`/api/scenes?place=${encodeURIComponent(placeSlug)}`, { signal: options.signal });
     if (!response.ok) {
         let detail = response.statusText || "Request failed";
         try {
