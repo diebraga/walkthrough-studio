@@ -1,0 +1,88 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../server/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum SceneAssetType {
+  GAUSSIAN_SPLAT
+  COLLISION_REPORT
+  MANUAL_COLLISION
+  OTHER
+}
+
+model Place {
+  id          String      @id @default(uuid()) @db.Uuid
+  slug        String      @unique
+  name        String
+  description String?
+  metadata    Json?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  sceneNodes  SceneNode[]
+}
+
+model SceneNode {
+  id              String       @id @default(uuid()) @db.Uuid
+  placeId         String       @db.Uuid
+  slug            String
+  name            String
+  collisionData   Json?
+  metadata        Json?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  place           Place        @relation(fields: [placeId], references: [id], onDelete: Cascade)
+  assets          SceneAsset[]
+  outgoingPortals Portal[]     @relation("PortalFromNode")
+  incomingPortals Portal[]     @relation("PortalToNode")
+
+  @@unique([placeId, slug])
+  @@index([placeId])
+}
+
+model SceneAsset {
+  id           String         @id @default(uuid()) @db.Uuid
+  sceneNodeId  String         @db.Uuid
+  type         SceneAssetType
+  objectKey    String?
+  originalPath String
+  mimeType     String
+  sizeBytes    BigInt
+  metadata     Json?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  sceneNode    SceneNode      @relation(fields: [sceneNodeId], references: [id], onDelete: Cascade)
+
+  @@unique([sceneNodeId, originalPath])
+  @@index([sceneNodeId])
+}
+
+model Portal {
+  id         String    @id @default(uuid()) @db.Uuid
+  fromNodeId String    @db.Uuid
+  toNodeId   String    @db.Uuid
+  sourceKey  String
+  name       String
+  positionX  Float
+  positionY  Float
+  positionZ  Float
+  yaw        Float
+  radius     Float
+  spawnX     Float
+  spawnY     Float
+  spawnZ     Float
+  spawnYaw   Float
+  spawnPitch Float
+  metadata   Json?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  fromNode   SceneNode @relation("PortalFromNode", fields: [fromNodeId], references: [id], onDelete: Cascade)
+  toNode     SceneNode @relation("PortalToNode", fields: [toNodeId], references: [id], onDelete: Cascade)
+
+  @@unique([fromNodeId, sourceKey])
+  @@index([fromNodeId])
+  @@index([toNodeId])
+}
