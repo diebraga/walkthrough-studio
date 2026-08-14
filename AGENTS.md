@@ -96,6 +96,11 @@ everything it needs, which becomes one row with a prefix. See
   function runs unbundled under real Node ESM, which has no extension
   fallback. Omitting it type-checks and works locally, then crashes only in
   production. See [docs/api.md](docs/api.md#relative-imports-need-a-js-extension).
+- **Every absolute React Router browser path needs an exact Vercel SPA rewrite.**
+  When adding `<Route path="/example">` in `src/App.tsx`, also add
+  `{ "source": "/example", "destination": "/index.html" }` to
+  `vercel.json`. Vite supplies this history fallback in development; Vercel
+  does not. API paths are file-based functions and are not SPA rewrites.
 - **`api/[[...route]].ts` must export the Hono app directly** (`export default
   app`), never `handle(app)` from `hono/vercel` — that wrapper hangs every
   request in production (verified against a real deployment; local dev can't
@@ -104,4 +109,7 @@ everything it needs, which becomes one row with a prefix. See
   platform, not the same bug. Any change to the Vercel entry's export shape
   needs a real `vercel --prod` deploy + `curl` to confirm, not just `pnpm dev`.
   See [docs/api.md](docs/api.md#how-each-provider-reaches-the-app).
-- `npx tsc -b` and `npx vite build` should both pass before committing.
+- **Production conventions are executable, not optional.** Run
+  `pnpm test:conventions && pnpm build` before committing. The build fails when
+  a backend relative import lacks its runtime extension or a browser route
+  lacks its exact Vercel SPA rewrite.

@@ -36,12 +36,10 @@ does.
 This isn't stylistic. `package.json` has `"type": "module"`, so anything
 that runs under real Node ESM — Vercel's production function — requires
 the exact, extension-complete specifier for a relative import; unlike
-CommonJS `require()`, there's no fallback resolution. Vercel builds this
-project's API with no `vercel.json`, so it has no bundler config telling
-it to bundle the function into one file: it transpiles each traced `.ts`
-file to a same-named `.js` file and imports between them at runtime like
-any other Node ESM code. Drop the extension and the entry point compiles
-and type-checks fine, works under `vite dev` (Vite's resolver fills in
+CommonJS `require()`, there's no fallback resolution. Vercel transpiles each
+traced `.ts` file to a same-named `.js` file and imports between them at
+runtime like any other Node ESM code. Drop the extension and the entry point
+compiles and type-checks fine, works under `vite dev` (Vite's resolver fills in
 extensions itself) and in a bundled AWS Lambda build (esbuild `--bundle`
 inlines everything, so there's no import statement left to resolve) — and
 then crashes only in the deployed Vercel function with
@@ -51,6 +49,24 @@ unbundled under Node's own ESM loader.
 **Any new relative import inside `server/`, `api/`, or `adapters/` needs
 the `.js` extension.** `src/` is unaffected — Vite bundles it, so its
 `moduleResolution: "bundler"` extensionless imports stay as they are.
+`pnpm check:conventions` parses these directories and rejects unsafe imports;
+it runs automatically at the start of every production build.
+
+## Browser routes need Vercel SPA rewrites
+
+Vite's development server falls back to `index.html` for client-side browser
+routes, but Vercel only does so when configured explicitly. When adding an
+absolute React Router path such as `<Route path="/example">` to `src/App.tsx`,
+add the exact matching rewrite to `vercel.json`:
+
+```json
+{ "source": "/example", "destination": "/index.html" }
+```
+
+Do not add SPA rewrites for `/api/*`; Vercel maps those paths to the
+`api/[[...route]].ts` serverless function. `pnpm check:conventions` verifies
+browser-route/rewrite parity and fails the build before an incomplete route can
+be deployed.
 
 ## How each provider reaches the app
 

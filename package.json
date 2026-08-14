@@ -4,8 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "check:conventions": "node tools/check-project-conventions.mjs",
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "pnpm check:conventions && tsc -b && vite build",
+    "test:conventions": "node --test tools/check-project-conventions.test.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
