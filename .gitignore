@@ -14,6 +14,12 @@ public/**/*.ply
 .repowise/
 # optional local Graphify knowledge graph and cache
 graphify-out/
+# local copies auto-installed by the Vercel Neon integration
+.agents/skills/neon/
+.agents/skills/neon-postgres/
+.claude/skills/neon
+.claude/skills/neon-postgres
+skills-lock.json
 # dev tooling config; local only
 .env
 .env.local
