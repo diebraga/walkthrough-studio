@@ -59,6 +59,7 @@ import { FloorPlaneCollision, type FloorPlaneOptions } from './floor-plane';
 import { GridCollision, type CollisionGridData } from './grid-collision';
 import {
     CombinedCollision,
+    createManualWall,
     EMPTY_MANUAL_COLLISION,
     ManualCollision,
     eraseManualCollisionAt,
@@ -2851,7 +2852,7 @@ class WalkDemoApp {
             ...this.manualCollision,
             floorY: this.currentFloorY(),
             wallHeight: this.manualCollision.wallHeight || 2,
-            walls: [...this.manualCollision.walls, { x: point.x, z: point.z, width: 1.4, depth: 0.24, yaw: point.yaw }],
+            walls: [...this.manualCollision.walls, createManualWall(point)],
         };
         this.params.manualCollisionStatus = `${this.manualCollision.floors.length} floor, ${this.manualCollision.walls.length} wall`;
         this.applyManualCollision();

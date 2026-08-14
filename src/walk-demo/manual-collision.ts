@@ -19,6 +19,10 @@ export interface ManualCollisionData {
 
 export const EMPTY_MANUAL_COLLISION: ManualCollisionData = { floorY: 0, wallHeight: 2, floors: [], walls: [] };
 
+export function createManualWall(point: { x: number; z: number; yaw: number }): ManualWallCollision {
+    return { x: point.x, z: point.z, width: 3, depth: 0.24, yaw: -point.yaw };
+}
+
 export async function loadManualCollision(sceneBase: string, signal?: AbortSignal): Promise<ManualCollisionData> {
     try {
         const res = await fetch(`${sceneBase}manual-collision.json`, { signal });
