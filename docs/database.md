@@ -52,6 +52,7 @@ pnpm db:generate         # generate @prisma/client
 pnpm db:migrate -- --name <change>  # create/apply a development migration
 pnpm db:migrate:deploy   # apply committed migrations
 pnpm db:import           # import/update public scene data
+pnpm db:inspect          # print a secret-free imported graph summary
 pnpm db:studio           # inspect data locally
 pnpm test:database       # database-layer unit tests
 ```

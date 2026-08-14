@@ -9,6 +9,16 @@ const globalDatabase = globalThis as typeof globalThis & {
 
 let moduleDatabase: DatabaseClient | undefined;
 
+export function loadDatabaseEnvironment(file = ".env.local"): void {
+  try {
+    process.loadEnvFile(file);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+}
+
+loadDatabaseEnvironment();
+
 export function requireDatabaseUrl(env: NodeJS.ProcessEnv = process.env): string {
   const url = env.DATABASE_URL;
   if (!url) {

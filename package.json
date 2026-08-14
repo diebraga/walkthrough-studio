@@ -8,6 +8,7 @@
     "check:conventions": "node tools/check-project-conventions.mjs",
     "db:generate": "prisma generate",
     "db:import": "node --import tsx tools/import-scenes.ts",
+    "db:inspect": "node --import tsx tools/inspect-scene-db.ts",
     "db:migrate": "prisma migrate dev",
     "db:migrate:deploy": "prisma migrate deploy",
     "db:studio": "prisma studio",
