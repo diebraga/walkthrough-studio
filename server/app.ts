@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { health } from "./routes/health.js";
+import { scenes } from "./routes/scenes.js";
 
 /**
  * Shared, provider-independent API. Every deployment target (Vercel,
@@ -13,3 +14,4 @@ import { health } from "./routes/health.js";
 export const app = new Hono().basePath("/api");
 
 app.route("/health", health);
+app.route("/scenes", scenes);
