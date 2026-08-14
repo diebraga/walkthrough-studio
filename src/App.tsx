@@ -1,11 +1,12 @@
 import { useEffect, useRef } from "react";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { start } from "./walk-demo/entry";
+import { HealthPage } from "./health/HealthPage";
 
 function NotFound() {
   return (
     <pre style={{ color: "#eee", font: "13px/1.6 monospace", padding: 24 }}>
-      {`No route for ${location.pathname}\n\nAvailable:\n  /`}
+      {`No route for ${location.pathname}\n\nAvailable:\n  /\n  /health`}
     </pre>
   );
 }
@@ -29,6 +30,7 @@ export function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<WalkRoute />} />
+        <Route path="/health" element={<HealthPage />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </BrowserRouter>

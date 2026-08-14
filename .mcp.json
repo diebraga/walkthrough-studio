@@ -9,6 +9,10 @@
         "stdio"
       ],
       "description": "repowise: codebase intelligence \u2014 docs, graph, git signals, dead code, decisions"
+    },
+    "shadcn": {
+      "command": "npx",
+      "args": ["shadcn@latest", "mcp"]
     }
   }
 }

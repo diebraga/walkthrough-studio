@@ -11,7 +11,7 @@ server/
   routes/
     health.ts        GET /api/health -> { ok: true }
 api/
-  [[...route]].ts    Vercel catch-all, delegates to server/app.ts via hono/vercel
+  [[...route]].ts    Vercel catch-all, exports server/app.ts's Hono app directly
 adapters/
   aws-lambda.ts       thin Lambda handler around server/app.ts via hono/aws-lambda
 tools/
@@ -55,11 +55,24 @@ the `.js` extension.** `src/` is unaffected — Vite bundles it, so its
 ## How each provider reaches the app
 
 - **Vercel**: `api/[[...route]].ts` is Vercel's file-based catch-all for
-  everything under `/api`. It calls `handle(app)` from `hono/vercel`, which
-  is just `(req: Request) => Response`, Vercel's Node runtime supports that
-  signature directly, no `@vercel/node` types needed.
+  everything under `/api`. It does `export default app` — the Hono app
+  instance itself, unwrapped. Vercel's Node runtime detects the exported
+  object's `.fetch` method (its documented "fetch Web Standard" convention)
+  and calls it directly.
+
+  **Do not change this to `handle(app)` from `hono/vercel`.** That wrapper
+  produces a plain `(req: Request) => Response` function, which the runtime
+  does *not* recognize as a Web-Fetch handler — it silently falls back to
+  the legacy Node `(req, res)` calling convention instead. Since nothing
+  then calls `res.end()`, every request hangs until it times out. This
+  shipped to production once already; see git history around the
+  `[[...route]].ts` comment for the incident. Any future change to this
+  file's export shape must be verified against a real Vercel deployment
+  (`vercel --prod` + `curl`), not just local dev — see the note below.
 - **AWS Lambda**: `adapters/aws-lambda.ts` exports `handler`, built with
-  `handle(app)` from `hono/aws-lambda`. Works behind API Gateway (v1/v2),
+  `handle(app)` from `hono/aws-lambda`. This is a *different*, correct use
+  of `handle()` — the AWS adapter converts Lambda events, not a Vercel
+  `Request`, so don't conflate the two. Works behind API Gateway (v1/v2),
   an ALB, or a Lambda Function URL — point whichever one you set up at this
   file's `handler` export. No infra is provisioned here; wiring up API
   Gateway/Function URL is the remaining step when you actually deploy to AWS.
@@ -68,6 +81,15 @@ the `.js` extension.** `src/` is unaffected — Vite bundles it, so its
   incoming Node request to a `Request`, calls `app.fetch()`, and writes the
   `Response` back. It's `apply: "serve"`, so it's absent from production
   builds — the built frontend only ever calls relative `/api/...` URLs.
+
+  **This does not validate the Vercel export shape.** It calls
+  `app.fetch()` directly, bypassing Vercel's own runtime introspection
+  entirely — that's exactly the check that missed the `handle(app)` bug
+  above. A route working under `pnpm dev` or even `npx vercel dev` proves
+  the route logic is correct; it doesn't prove `api/[[...route]].ts`'s
+  export shape is what production actually needs. `server/vercel-entry.test.ts`
+  guards the export shape itself; a real `vercel --prod` deploy + `curl`
+  is still the only way to confirm production end-to-end.
 
 ## Adding a provider later (Azure, Cloudflare Workers, Node/Bun, ...)
 
