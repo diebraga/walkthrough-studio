@@ -1,5 +1,5 @@
 import { PrismaNeon } from "@prisma/adapter-neon";
-import { PrismaClient } from "./generated/prisma/client.js";
+import { PrismaClient } from "@prisma/client";
 
 export type DatabaseClient = PrismaClient;
 

@@ -4,10 +4,17 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "build": "pnpm check:conventions && pnpm db:generate && tsc -b && vite build",
     "check:conventions": "node tools/check-project-conventions.mjs",
+    "db:generate": "prisma generate",
+    "db:import": "node --import tsx tools/import-scenes.ts",
+    "db:migrate": "prisma migrate dev",
+    "db:migrate:deploy": "prisma migrate deploy",
+    "db:studio": "prisma studio",
+    "db:validate": "prisma validate",
     "dev": "vite",
-    "build": "pnpm check:conventions && tsc -b && vite build",
     "test:conventions": "node --test tools/check-project-conventions.test.mjs",
+    "test:database": "node --import tsx server/db.test.ts && node --import tsx --test tools/scene-import/*.test.ts && node --import tsx server/routes/scenes.test.ts",
     "preview": "vite preview"
   },
   "dependencies": {

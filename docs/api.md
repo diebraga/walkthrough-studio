@@ -10,6 +10,7 @@ server/
   app.ts            shared Hono app, basePath("/api"), routes mounted here
   routes/
     health.ts        GET /api/health -> { ok: true }
+    scenes.ts        GET /api/scenes -> imported place/node/asset/portal graph
 api/
   [[...route]].ts    Vercel catch-all, exports server/app.ts's Hono app directly
 adapters/
@@ -136,3 +137,10 @@ deploy.
 
 `GET /api/health` → `{ "ok": true }`. Exists to prove the wiring, not as a
 real feature — don't build on it.
+
+## Scene graph endpoint
+
+`GET /api/scenes` reads the imported scene graph from Neon through the shared
+Prisma client. It returns places with nodes, asset references, structured
+collision data, and directional portals. Asset byte sizes are decimal strings
+because JavaScript JSON cannot encode `bigint` values.

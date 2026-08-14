@@ -1,5 +1,5 @@
 import type { DatabaseClient } from "../../server/db.js";
-import { Prisma } from "../../server/generated/prisma/client.js";
+import { Prisma } from "@prisma/client";
 import type { JsonValue, SceneImportPlan } from "./discover.js";
 
 export interface ImportSummary {

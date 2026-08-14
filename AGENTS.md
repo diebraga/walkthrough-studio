@@ -13,6 +13,7 @@ growing it. When you add a document, add a line here.
 | [docs/collision-pipeline.md](docs/collision-pipeline.md) | Generating floor + wall collision for a scan, or collision is wrong |
 | [docs/dev-settings.md](docs/dev-settings.md) | Turning on the collision overlay or portal capture |
 | [docs/api.md](docs/api.md) | Adding an API route, or wiring up a new deployment provider |
+| [docs/database.md](docs/database.md) | Changing persistent scene data, Prisma models/migrations, or running the initial import |
 | [docs/design.md](docs/design.md) | Writing or styling any UI — colors, type, spacing, components |
 | [docs/contributor-tools.md](docs/contributor-tools.md) | Installing optional local analysis tools such as Graphify |
 
@@ -92,6 +93,10 @@ everything it needs, which becomes one row with a prefix. See
   thin per-provider translators around the one shared Hono app; a route added
   only under one of them exists for that provider alone. See
   [docs/api.md](docs/api.md).
+- **Persistent scene data uses Neon Postgres through Prisma.** Schema changes
+  require committed Prisma migrations; never alter production tables manually
+  or create them at application startup. PLY files stay outside Postgres. See
+  [docs/database.md](docs/database.md).
 - **Relative imports in `server/`, `api/`, `adapters/` need a `.js` extension**
   (`"../server/app.js"`, even though the file is `app.ts`) — Vercel's deployed
   function runs unbundled under real Node ESM, which has no extension
