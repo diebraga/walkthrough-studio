@@ -11,6 +11,9 @@ importers:
       '@manycore/aholo-viewer':
         specifier: ^1.8.1
         version: 1.8.1
+      hono:
+        specifier: ^4.13.2
+        version: 4.13.2
       react:
         specifier: ^19.2.8
         version: 19.2.8
@@ -530,6 +533,10 @@ packages:
   gensync@1.0.0-beta.2:
     resolution: {integrity: sha512-3hN7NaskYvMDLQY55gnW3NQ+mesEAepTqlg+VEbj7zzqEMBVNhzcGYYeqFo/TlYz6eQiFcp1HcsCZO+nGgS8zg==}
     engines: {node: '>=6.9.0'}
+
+  hono@4.13.2:
+    resolution: {integrity: sha512-JydRilDRkYBQMt9qR9U92mXxmbGqsqSn/IKOrh4e7/gEbn+0zSr8igTu0obwJoNGN4sez28DIql7FBHWydoJpA==}
+    engines: {node: '>=16.9.0'}
 
   js-tokens@4.0.0:
     resolution: {integrity: sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ==}
@@ -1081,6 +1088,8 @@ snapshots:
     optional: true
 
   gensync@1.0.0-beta.2: {}
+
+  hono@4.13.2: {}
 
   js-tokens@4.0.0: {}
 

@@ -12,6 +12,7 @@ growing it. When you add a document, add a line here.
 | [docs/scene-assets.md](docs/scene-assets.md) | Adding a scene or property, or wondering where an asset lives |
 | [docs/collision-pipeline.md](docs/collision-pipeline.md) | Generating floor + wall collision for a scan, or collision is wrong |
 | [docs/dev-settings.md](docs/dev-settings.md) | Turning on the collision overlay or portal capture |
+| [docs/api.md](docs/api.md) | Adding an API route, or wiring up a new deployment provider |
 
 ## Routes
 
@@ -29,7 +30,10 @@ Vite serves any root-level `.html` as its own entry, and falls back to
 ```
 src/walk-demo/     the walk demo: a near-verbatim copy of the aholojs.dev
                    walk-demo example plus a runtime host and collision
-tools/             offline asset pipeline (node, not bundled)
+server/            shared Hono API — see docs/api.md
+api/               Vercel entry point, delegates to server/
+adapters/          thin per-provider handlers (AWS Lambda, ...), delegate to server/
+tools/             offline asset pipeline + dev-only Vite plugins (node, not bundled)
 public/<slug>/     scene assets — see docs/scene-assets.md
 ```
 
@@ -39,9 +43,10 @@ against the original.
 
 ## Temporary by design
 
-Configuration currently lives in files because there is no backend yet. These are
-stand-ins, and code should not assume they are permanent — nothing should hard-code
-a scene, and nothing should depend on a database either.
+Configuration currently lives in files because nothing in `server/` reads or
+writes scene data yet. These are stand-ins, and code should not assume they
+are permanent — nothing should hard-code a scene, and nothing should depend
+on a database either.
 
 | Today | Later |
 |---|---|
@@ -69,4 +74,8 @@ everything it needs, which becomes one row with a prefix. See
 - **Developer tooling is behind flags**, off by default even in dev, and inert
   in production. Never wire a debug UI in unguarded — see
   [docs/dev-settings.md](docs/dev-settings.md).
+- **API routes go in `server/`, not in `api/` or `adapters/`.** Those two are
+  thin per-provider translators around the one shared Hono app; a route added
+  only under one of them exists for that provider alone. See
+  [docs/api.md](docs/api.md).
 - `npx tsc -b` and `npx vite build` should both pass before committing.
