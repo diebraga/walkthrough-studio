@@ -8,7 +8,7 @@ How scene files are named and organised. Index: [../AGENTS.md](../AGENTS.md).
 public/
   <property-slug>/            key for a place — becomes a DB row later
     <scene>/                  one part of that place
-      index.ply               the splat (gitignored, too large for git)
+      index.ply | index.spz   the splat (gitignored, too large for git)
       collision.json          baked collision — floor plane + walkable grid
       collision-report.json   what the bake measured, and its QA warnings
       portals.json            named points in the scene (optional)
@@ -46,15 +46,16 @@ repeatable imports, local authoring, and rollback.
 Portals are captured in-app rather than written by hand — see
 [dev-settings.md](dev-settings.md).
 
-In deployed environments, large `index.ply` files are loaded from object storage
-when `VITE_SPLAT_BASE_URL` is set. `SceneAsset` supplies the reference. Runtime
-collision and portals come from Neon through Hono, not separate static JSON
-requests. Collision reports remain import/QA metadata.
+In deployed environments, large `index.ply` and `index.spz` files are loaded
+from object storage when `VITE_SPLAT_BASE_URL` is set. `SceneAsset` supplies the
+reference. Runtime collision and portals come from Neon through Hono, not
+separate static JSON requests. Collision reports remain import/QA metadata.
 
 ## Adding a scene
 
 1. `mkdir -p public/<property-slug>/<scene>/`
-2. Put the splat in as `index.ply`.
+2. Put the splat in as `index.ply` or `index.spz`. If both are present, the
+   importer selects `index.spz` and ignores the superseded PLY for that node.
 3. Bake collision — see [collision-pipeline.md](collision-pipeline.md):
    ```
    node tools/build-collision.mjs public/<property-slug>/<scene>/index.ply \
@@ -85,10 +86,11 @@ It is not built yet.
 
 ## Committed vs local
 
-`public/**/*.ply` is gitignored — splats run 100 MB+, over GitHub's hard 100 MB
-per-file limit, and a push containing one is rejected outright. `collision.json`
-and `collision-report.json` are small and **are** committed: they are the
-reviewed, derived artefacts.
+`public/**/*.ply` and `public/**/*.spz` are gitignored — splats are large binary
+assets that do not belong in Git. In production, both formats are stored
+externally and referenced through `SceneAsset`. `collision.json` and
+`collision-report.json` are small and **are** committed: they are the reviewed,
+derived artefacts.
 
 A fresh clone can read metadata from Neon, but local static splat delivery still
 requires the files or a configured `VITE_SPLAT_BASE_URL`.
