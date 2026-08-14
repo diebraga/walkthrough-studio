@@ -74,8 +74,10 @@ R2 write credentials to render scenes.
 
 Provisioning stops before database mutation if either upload fails. Each upload
 is verified by object metadata and a public `HEAD` request before Neon is
-re-imported. The importer rejects ambiguous nodes containing more than one
-active Gaussian-splat source rather than relying on directory ordering.
+re-imported. The `index.spz` and `index.ply` case has intentional precedence:
+the importer selects `index.spz`. If future source formats can leave multiple
+active Gaussian-splat sources without explicit precedence, the importer must
+reject them rather than relying on directory ordering.
 
 If database import or deployment configuration fails after successful uploads,
 the objects remain safe to reuse and the existing production metadata remains
@@ -83,8 +85,9 @@ recoverable through Neon history. The old local balcony PLY is retained.
 
 ## Verification
 
-- Unit tests cover PLY/SPZ discovery, object keys, MIME types, and rejection of
-  ambiguous active splats.
+- Unit tests cover PLY/SPZ discovery, intentional SPZ-over-PLY precedence,
+  object keys, and MIME types. Future unsupported multiple-active-source cases
+  must be rejected.
 - Database tests and the secret-free inspector confirm the hall points to the
   PLY key and balcony points to the SPZ key with matching byte sizes.
 - Public `HEAD` requests confirm both objects are reachable with CORS and correct

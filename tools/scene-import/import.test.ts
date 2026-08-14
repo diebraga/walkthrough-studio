@@ -73,7 +73,7 @@ function fakeDatabase() {
     sceneNode: {
       upsert: async ({ where }: { where: { placeId_slug: { placeId: string; slug: string } } }) => {
         const key = `${where.placeId_slug.placeId}:${where.placeId_slug.slug}`;
-        if (!nodes.has(key)) nodes.set(key, { id: `node-${where.placeId_slug.slug}` });
+        if (!nodes.has(key)) nodes.set(key, { id: `node-${where.placeId_slug.placeId}-${where.placeId_slug.slug}` });
         return nodes.get(key)!;
       },
     },
@@ -146,9 +146,34 @@ test("rejects unresolved portal destinations before opening a transaction", asyn
   assert.equal(transactions, 0);
 });
 
+test("assigns distinct mock node IDs to same-slug nodes in different places", async () => {
+  const fake = fakeDatabase();
+  const node = (): SceneImportPlan["places"][number]["nodes"][number] => ({
+    slug: "hall",
+    name: "Hall",
+    collisionData: null,
+    metadata: null,
+    assets: [],
+    portals: [],
+  });
+
+  await persistSceneImport(fake.database, {
+    places: ["first_place", "second_place"].map((slug) => ({
+      slug,
+      name: slug,
+      description: null,
+      metadata: null,
+      nodes: [node()],
+    })),
+  });
+
+  assert.equal(fake.nodes.size, 2);
+  assert.equal(new Set([...fake.nodes.values()].map((record) => record.id)).size, 2);
+});
+
 test("deletes stale scene assets while retaining the planned originals", async () => {
   const fake = fakeDatabase();
-  fake.assets.set("node-balcony:public/sample_place/balcony/stale.ply", { id: "stale" });
+  fake.assets.set("node-id-1-balcony:public/sample_place/balcony/stale.ply", { id: "stale" });
   const plan: SceneImportPlan = {
     places: [{
       slug: "sample_place",
@@ -170,7 +195,7 @@ test("deletes stale scene assets while retaining the planned originals", async (
             metadata: null,
           },
           {
-            type: "COLLISION",
+            type: "MANUAL_COLLISION",
             objectKey: null,
             originalPath: "public/sample_place/balcony/manual-collision.json",
             mimeType: "application/json",
@@ -187,7 +212,7 @@ test("deletes stale scene assets while retaining the planned originals", async (
 
   assert.deepEqual(fake.sceneAssetDeleteCalls, [{
     where: {
-      sceneNodeId: "node-balcony",
+      sceneNodeId: "node-id-1-balcony",
       originalPath: {
         notIn: [
           "public/sample_place/balcony/index.spz",
@@ -196,7 +221,7 @@ test("deletes stale scene assets while retaining the planned originals", async (
       },
     },
   }]);
-  assert.equal(fake.assets.has("node-balcony:public/sample_place/balcony/stale.ply"), false);
+  assert.equal(fake.assets.has("node-id-1-balcony:public/sample_place/balcony/stale.ply"), false);
 });
 
 test("deletes all scene assets when the plan has no assets", async () => {
@@ -218,5 +243,5 @@ test("deletes all scene assets when the plan has no assets", async () => {
     }],
   });
 
-  assert.deepEqual(fake.sceneAssetDeleteCalls, [{ where: { sceneNodeId: "node-empty" } }]);
+  assert.deepEqual(fake.sceneAssetDeleteCalls, [{ where: { sceneNodeId: "node-id-1-empty" } }]);
 });
