@@ -13,6 +13,9 @@
   "dependencies": {
     "@base-ui/react": "^1.7.0",
     "@manycore/aholo-viewer": "^1.8.1",
+    "@neondatabase/serverless": "^1.1.0",
+    "@prisma/adapter-neon": "^7.9.1",
+    "@prisma/client": "^7.9.1",
     "@tailwindcss/vite": "^4.3.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -32,6 +35,8 @@
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^5.2.0",
+    "prisma": "^7.9.1",
+    "tsx": "^4.23.12",
     "typescript": "^5",
     "vite": "^7"
   }
