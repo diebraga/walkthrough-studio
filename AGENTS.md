@@ -14,6 +14,7 @@ growing it. When you add a document, add a line here.
 | [docs/dev-settings.md](docs/dev-settings.md) | Turning on the collision overlay or portal capture |
 | [docs/api.md](docs/api.md) | Adding an API route, or wiring up a new deployment provider |
 | [docs/design.md](docs/design.md) | Writing or styling any UI — colors, type, spacing, components |
+| [docs/contributor-tools.md](docs/contributor-tools.md) | Installing optional local analysis tools such as Graphify |
 
 ## Routes
 

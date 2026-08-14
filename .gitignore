@@ -12,6 +12,8 @@ splat_hall_3.ply
 public/**/*.ply
 # repowise: derived index and caches, rebuilt by `repowise init`
 .repowise/
+# optional local Graphify knowledge graph and cache
+graphify-out/
 # dev tooling config; local only
 .env
 .env.local
