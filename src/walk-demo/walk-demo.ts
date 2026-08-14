@@ -50,6 +50,7 @@ import {
     type Portal,
 } from './portals';
 import { resolvePortalTeleport, type TeleportPose } from './teleport';
+import { loadLastPose, saveLastPose } from './saved-pose';
 import { flyVector } from './fly-mode';
 import { mobileJoystickInput } from './mobile-joystick';
 import { clampPitch, nextLookAngles } from './walk-look';
@@ -2472,8 +2473,17 @@ class WalkDemoApp {
     private teleporting = false;
     private firstSceneLoad = true;
 
+    /** Remember where you were, so a reload lands you back instead of at spawn. */
+    private savePoseOnUnload = (): void => {
+        const walk = this.walk;
+        if (!walk) return;
+        const pose = walk.getPose();
+        saveLastPose(this.params.scheme, { px: pose.x, py: pose.y, pz: pose.z, yaw: pose.yaw, pitch: pose.pitch });
+    };
+
     constructor(ctx: RenderRuntime) {
         this.ctx = ctx;
+        window.addEventListener('pagehide', this.savePoseOnUnload);
         this.params = {
             scheme: 'indoor',
             viewMode: 'third',
@@ -3035,6 +3045,7 @@ class WalkDemoApp {
         sceneLoop.setThirdPersonEnabled(showAvatar);
         const walker = walkLoop.getCharacterState().position;
         this.updatePortalTrigger(walkLoop, walker.x, walker.z);
+        this.collisionDebug?.tick(deltaClamped);
         sceneLoop.updateCamera(walkLoop.getCameraState());
         if (scheme.splatMode === 'lod') {
             sceneLoop.tickLod();
@@ -3141,7 +3152,7 @@ class WalkDemoApp {
             if (generation !== this.reloadGeneration) {
                 return;
             }
-            const p = options.pose ?? scheme.pose;
+            const p = options.pose ?? loadLastPose(this.params.scheme) ?? scheme.pose;
             if (!options.pose) {
                 walk.startAtPose(new Vector3(p.px, p.py, p.pz), p.yaw, p.pitch);
             }
@@ -3266,6 +3277,7 @@ class WalkDemoApp {
 
     /** Stop walk mode and restore the original runtime camera. */
     dispose(): void {
+        window.removeEventListener('pagehide', this.savePoseOnUnload);
         this.reloadAbort?.abort();
         this.reloadAbort = undefined;
         this.reloadGeneration += 1;
