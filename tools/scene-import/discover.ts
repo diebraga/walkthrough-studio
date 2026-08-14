@@ -98,8 +98,16 @@ async function discoverNode(
   let collisionData: JsonValue | null = null;
   const assets: SceneAssetImport[] = [];
   const portals: PortalImport[] = [];
+  const preferredSplat = files.includes("index.spz")
+    ? "index.spz"
+    : files.includes("index.ply")
+      ? "index.ply"
+      : null;
 
   for (const filename of files) {
+    if ((filename === "index.ply" || filename === "index.spz") && filename !== preferredSplat) {
+      continue;
+    }
     const absolutePath = path.join(nodePath, filename);
     const relativeSource = sourcePath(rootPrefix, placeSlug, nodeSlug, filename);
     if (filename === "collision.json") {
@@ -122,7 +130,9 @@ async function discoverNode(
       : null;
     assets.push({
       type: assetType(filename),
-      objectKey: null,
+      objectKey: isGaussianSplat(filename)
+        ? sourcePath(placeSlug, nodeSlug, filename)
+        : null,
       originalPath: relativeSource,
       mimeType: mimeType(filename),
       sizeBytes: fileStat.size,
@@ -189,10 +199,14 @@ async function directories(parent: string): Promise<string[]> {
 }
 
 function assetType(filename: string): SceneAssetImportType {
-  if (filename === "index.ply") return "GAUSSIAN_SPLAT";
+  if (isGaussianSplat(filename)) return "GAUSSIAN_SPLAT";
   if (filename === "collision-report.json") return "COLLISION_REPORT";
   if (filename === "manual-collision.json") return "MANUAL_COLLISION";
   return "OTHER";
+}
+
+function isGaussianSplat(filename: string): boolean {
+  return filename === "index.ply" || filename === "index.spz";
 }
 
 function mimeType(filename: string): string {

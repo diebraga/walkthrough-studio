@@ -15,6 +15,7 @@ async function createFixture(): Promise<string> {
     );
     await writeFile(path.join(root, "sample_place", node, "index.ply"), "ply\n");
   }
+  await writeFile(path.join(root, "sample_place", "balcony", "index.spz"), "spz-data");
   await writeFile(
     path.join(root, "sample_place", "hall", "collision-report.json"),
     JSON.stringify({ warnings: ["check floor"] }),
@@ -64,6 +65,23 @@ test("discovers nodes, structured JSON, assets, and directional portals", async 
     ],
   );
   assert.deepEqual(hall.assets[0].metadata, { warnings: ["check floor"] });
+  const balcony = plan.places[0].nodes.find((node) => node.slug === "balcony");
+  assert.ok(balcony);
+  assert.deepEqual(
+    balcony.assets.filter((asset) => asset.type === "GAUSSIAN_SPLAT"),
+    [{
+      type: "GAUSSIAN_SPLAT",
+      objectKey: "sample_place/balcony/index.spz",
+      originalPath: "sample_place/balcony/index.spz",
+      mimeType: "application/octet-stream",
+      sizeBytes: 8,
+      metadata: null,
+    }],
+  );
+  assert.equal(
+    hall.assets.find((asset) => asset.type === "GAUSSIAN_SPLAT")?.objectKey,
+    "sample_place/hall/index.ply",
+  );
   assert.equal(hall.portals[0].toNodeSlug, "balcony");
   assert.equal(hall.portals[0].sourceKey, "sample_place/hall/portals.json#0");
   assert.deepEqual(hall.portals[0].metadata, { label: "preserved" });
