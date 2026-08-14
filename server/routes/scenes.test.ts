@@ -1,7 +1,7 @@
 import { strict as assert } from "node:assert";
 import { createScenesRoute } from "./scenes.js";
 
-const route = createScenesRoute(async () => [
+const places = [
   {
     id: "place-1",
     slug: "sample",
@@ -48,7 +48,12 @@ const route = createScenesRoute(async () => [
       },
     ],
   },
-]);
+];
+
+const route = createScenesRoute({
+  readAll: async () => places,
+  readBySlug: async (slug) => places.find((place) => place.slug === slug) ?? null,
+});
 
 const response = await route.request("/");
 assert.equal(response.status, 200);
@@ -66,3 +71,13 @@ assert.deepEqual(body.places[0].nodes[0].portals[0], {
   toNodeSlug: "balcony",
   toNodeName: "Balcony",
 });
+
+const placeResponse = await route.request("/sample");
+assert.equal(placeResponse.status, 200);
+const placeBody = await placeResponse.json();
+assert.equal(placeBody.place.slug, "sample");
+assert.equal(placeBody.place.nodes[0].assets[0].sizeBytes, "163141743");
+
+const missingResponse = await route.request("/missing");
+assert.equal(missingResponse.status, 404);
+assert.deepEqual(await missingResponse.json(), { error: "Place not found" });
