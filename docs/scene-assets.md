@@ -32,23 +32,24 @@ a site name all work. Lowercase, underscore-separated, no spaces.
 Named for the room, not numbered, so the folder says what it is. One property has
 many scenes.
 
-## Why it is shaped this way
+## Runtime ownership
 
-`public/` is standing in for the asset bucket. The same paths will work when the
-files move to object storage, and the property slug becomes the key of a database
-table with scenes as its rows. **That table does not exist yet** — the folders are
-the source of truth for now, and nothing should depend on a database.
+Neon Postgres is the canonical runtime source for places, nodes, collision,
+asset references, and portals. The frontend obtains one place graph through
+`GET /api/scenes/:placeSlug`; it does not discover nodes or relationships by
+walking these folders.
 
-Everything a scene needs lives in one folder. Adding a scene is dropping a folder
-in; nothing has to be renamed or wired up elsewhere.
+`public/` remains the import and developer-authoring source. The importer turns
+these folders into database rows. Do not delete them yet: they remain useful for
+repeatable imports, local authoring, and rollback.
 
 Portals are captured in-app rather than written by hand — see
 [dev-settings.md](dev-settings.md).
 
 In deployed environments, large `index.ply` files are loaded from object storage
-when `VITE_SPLAT_BASE_URL` is set. The small files in each scene folder
-(`collision.json`, `collision-report.json`, `portals.json`) still come from the
-app's `public/` folder.
+when `VITE_SPLAT_BASE_URL` is set. `SceneAsset` supplies the reference. Runtime
+collision and portals come from Neon through Hono, not separate static JSON
+requests. Collision reports remain import/QA metadata.
 
 ## Adding a scene
 
@@ -60,8 +61,8 @@ app's `public/` folder.
      --out public/<property-slug>/<scene>
    ```
 4. Read the QA report before trusting it. `all QA gates passed` is the bar.
-5. Point the app at the folder — currently the `SCENE_HALL` constant in
-   `src/walk-demo/walk-demo.ts`.
+5. Run `pnpm db:import`. The renderer discovers the node through the database
+   graph; do not add a hard-coded folder relationship.
 
 Collision generation is expected to become automatic — run on upload, stored as
 scene-row columns rather than a file. See
@@ -89,5 +90,5 @@ per-file limit, and a push containing one is rejected outright. `collision.json`
 and `collision-report.json` are small and **are** committed: they are the
 reviewed, derived artefacts.
 
-A fresh clone therefore has no splats and `/` will not load until one is
-placed by hand. That is deliberate until the bucket exists.
+A fresh clone can read metadata from Neon, but local static splat delivery still
+requires the files or a configured `VITE_SPLAT_BASE_URL`.

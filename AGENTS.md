@@ -40,33 +40,29 @@ server/            shared Hono API — see docs/api.md
 api/               Vercel entry point, delegates to server/
 adapters/          thin per-provider handlers (AWS Lambda, ...), delegate to server/
 tools/             offline asset pipeline + dev-only Vite plugins (node, not bundled)
-public/<slug>/     scene assets — see docs/scene-assets.md
+public/<slug>/     import/authoring source + local assets — see docs/scene-assets.md
 ```
 
 `src/walk-demo/walk-demo.ts` is a **copy of upstream** (aholojs.dev playground,
 `?example=walk-demo`). Keep edits few and comment each one, so it stays diffable
 against the original.
 
-## Temporary by design
+## Scene data boundaries
 
-Configuration currently lives in files because nothing in `server/` reads or
-writes scene data yet. These are stand-ins, and code should not assume they
-are permanent — nothing should hard-code a scene, and nothing should depend
-on a database either.
+Neon Postgres is the canonical runtime metadata store. The frontend loads a
+place graph through Hono/Prisma; it must not infer scene relationships from
+folder names. Files remain import and developer-authoring inputs, while large
+splats remain external assets.
 
-| Today | Later |
+| Concern | Source |
 |---|---|
-| `public/<property-slug>/<scene>/` folders | object storage, addressed the same way |
-| the property slug | key of a properties table |
-| each scene folder | a row in a scenes table |
-| `SCENE_HALL` constant in `walk-demo.ts` | the scene record for whatever is being viewed |
-| `collision.json` baked by hand | generated automatically on upload, stored as columns on the scene row |
-| `portals.json` per scene | portal rows, linking scenes to each other |
+| place/node/collision/portal metadata | Neon via `GET /api/scenes/:placeSlug` |
+| `.ply` and other heavy assets | static/object storage, referenced by `SceneAsset` |
+| `public/<property>/<node>/*.json` | import and dev-authoring source, not runtime authority |
+| default camera pose | presentation config in `scene-catalog.ts` until modeled |
 | `VITE_DEV_FLAGS` in `.env` | per-user or per-environment settings |
 
-The paths were chosen so the move costs little: a scene is one folder with
-everything it needs, which becomes one row with a prefix. See
-[docs/scene-assets.md](docs/scene-assets.md).
+See [docs/scene-assets.md](docs/scene-assets.md) for the import/asset boundary.
 
 ## Conventions worth knowing before you change anything
 
@@ -97,6 +93,10 @@ everything it needs, which becomes one row with a prefix. See
   require committed Prisma migrations; never alter production tables manually
   or create them at application startup. PLY files stay outside Postgres. See
   [docs/database.md](docs/database.md).
+- **Runtime scene metadata comes from Neon through Hono.** New scene-loading
+  code must use node IDs and API relationships rather than constructing
+  collision or portal relationships from `public/` paths. Heavy assets remain
+  external and are resolved from `SceneAsset` references.
 - **Relative imports in `server/`, `api/`, `adapters/` need a `.js` extension**
   (`"../server/app.js"`, even though the file is `app.ts`) — Vercel's deployed
   function runs unbundled under real Node ESM, which has no extension

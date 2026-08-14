@@ -30,10 +30,26 @@ Place
 - User ownership will eventually attach to Place. No user or fake owner exists
   yet.
 
+## Runtime data flow
+
+```text
+Neon -> shared Prisma client -> Hono place graph -> frontend scene catalog -> renderer
+SceneAsset reference -> public/ or object storage -> renderer
+```
+
+Neon is canonical for migrated place/node metadata, structured collision JSON,
+asset references, and directional portals. The frontend never accesses Prisma
+directly. It fetches one place graph from Hono, passes collision and portals to
+the renderer in memory, and resolves portal targets by immutable node UUID.
+
+Large splats remain outside Postgres. The catalog turns their `objectKey` or
+`originalPath` into the same static/Blob URL used by the renderer.
+
 ## Initial source import
 
-The initial dataset remains under `public/<place>/<scene>/`. It is migration
-input and must not be deleted yet. The importer discovers directories, stores
+The initial dataset remains under `public/<place>/<scene>/`. It is migration and
+developer-authoring input, not the runtime metadata authority, and must not be
+deleted yet. The importer discovers directories, stores
 collision JSON on SceneNode, registers PLY/report/manual-collision assets, and
 resolves portal destination slugs to node IDs. Upserts and schema uniqueness
 make repeated imports idempotent.
