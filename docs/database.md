@@ -60,6 +60,25 @@ pnpm db:import
 
 Unknown files become `OTHER` assets so they are not silently discarded.
 
+### Reciprocal portal completion
+
+Portal authoring remains directional: for an intended `A -> B` link, the author
+sets the target scene and an explicit destination spawn in B. Scene coordinate
+frames are unrelated, so that spawn must be captured in the target scene; it
+cannot be inferred from the portal position in A.
+
+During discovery, the importer completes the graph before writing it to Neon.
+If B has no explicit portal targeting A, it generates a default `B -> A`
+direction whose position and yaw are the forward destination spawn, whose radius
+matches the forward portal, and whose return spawn is the original portal
+position in A (facing back through it). Generated source keys are stable, so
+repeated imports update rather than duplicate these rows.
+
+An explicit `B -> A` portal is authoritative and suppresses the generated
+default. Import reconciliation also removes a formerly generated row when an
+explicit reverse replaces it. Neon stores the resulting complete directional
+graph; the API and browser never synthesize missing reverse portals at runtime.
+
 ## Commands
 
 ```sh

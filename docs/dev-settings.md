@@ -90,6 +90,12 @@ normally, yellow while you are inside one. Entering and leaving logs
 `[portal] entered <name>` / `[portal] exited <name>`, edge-triggered so it fires
 once per transition rather than every frame.
 
+After a linked portal changes scenes, arrival is deliberately disarmed while
+the walker remains inside any destination portal radius. The destination marker
+still turns yellow, but it cannot immediately send the walker back. Walk fully
+outside every portal radius to rearm activation, then re-enter the return portal
+to travel back.
+
 Rows are **collapsed by default on purpose**: deleting takes expand-then-click,
 so a stray click cannot remove the wrong portal. Position is read-only — if a
 portal is in the wrong place, delete it and walk back, rather than turning the
@@ -123,12 +129,18 @@ delete something you wanted.
 }
 ```
 
-`to` and `spawn` are null until scenes are linked. They are in the file now so
-the shape does not have to change when a portal becomes a real doorway: `to` will
-name the target scene and `spawn` the arrival pose in it. Spawns cannot be
-derived — each scan has its own arbitrary coordinate frame, so where you arrive
-in the kitchen has no relationship to where the door is in the hall. Capture the
-arrival point by walking the target scene and adding a portal there too.
+`to` and `spawn` are null until scenes are linked. To author a forward doorway,
+set `to` to the target scene slug and `spawn` to the desired arrival pose in that
+scene. Spawns cannot be derived — each scan has its own arbitrary coordinate
+frame, so where you arrive in the kitchen has no relationship to where the door
+is in the hall. Walk the target scene, use **Copy position** to capture that pose,
+and place it on the forward portal before running `pnpm db:import`.
+
+You do not need to author a second portal solely to make the doorway reversible.
+The importer creates a default return direction at the forward destination
+spawn, pointing back to the original portal. If the return needs different
+placement, radius, or arrival pose, author an explicit target-to-source portal;
+that explicit reverse takes precedence over the generated default.
 
 ## Adding a flag
 
