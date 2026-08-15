@@ -34,6 +34,7 @@ import {
 } from '@manycore/aholo-viewer';
 import type { Scene3D, Viewer } from '@manycore/aholo-viewer';
 import { CollisionDebugOverlay } from './collision-debug';
+import { PortalActivationGate } from './portal-activation';
 import { PortalRenderer } from './portal-renderer';
 import { activeDevFlags, devEnabled, envDevFlagsActive, readDevToggle, writeDevToggle } from './dev-settings';
 import {
@@ -2387,6 +2388,7 @@ class WalkDemoApp {
     private portalRows: FolderApi[] = [];
     private collisionDebug: CollisionDebugOverlay | undefined;
     private portalRenderer: PortalRenderer | undefined;
+    private readonly portalActivation = new PortalActivationGate();
     private scene: WalkDemoScene | undefined;
     private walk: ViewerWalkMode | undefined;
     private running = false;
@@ -2469,6 +2471,7 @@ class WalkDemoApp {
             // would undo the robot default on the first scene switch. Keep
             // whatever character is selected instead.
             this.thirdPersonCharacterBinding?.refresh();
+            this.portalActivation.reset();
             void this.queueReloadScene();
         });
         this.thirdPersonCharacterBinding = pane
@@ -2625,22 +2628,25 @@ class WalkDemoApp {
     }
 
     /**
-     * Edge-triggered portal enter/exit. Fires once per transition rather than
-     * every frame, which is also how a real scene change will need to behave —
-     * enter starts it, exit cancels a prefetch if you step back out.
+     * Track geometric entry for presentation on every frame, while activation
+     * stays disarmed after arrival until the walker fully exits all portals.
      */
     private updatePortalTrigger(walk: ViewerWalkMode, x: number, z: number): void {
         const current = portalAt(this.portals, x, z);
+        const portalKey = current ? current.id ?? `${this.params.scheme}:${current.name}` : null;
+        const activation = this.portalActivation.observe(portalKey);
         if (current?.name !== this.insidePortalName) {
             if (this.insidePortalName) {
                 console.log(`[portal] exited ${this.insidePortalName}`);
             }
             if (current) {
                 console.log(`[portal] entered ${current.name}`, current.toNodeId ? `-> ${current.toNodeId}` : '(no target yet)');
-                void this.teleportThroughPortal(current);
             }
-            this.insidePortalName = current?.name;
-            this.params.insidePortal = current?.name ?? '-';
+        }
+        this.insidePortalName = current?.name;
+        this.params.insidePortal = current?.name ?? '-';
+        if (current && activation.activate) {
+            void this.teleportThroughPortal(current);
         }
         const floorY = walk.collisionGrid?.floorY;
         if (floorY !== undefined) {
@@ -2659,6 +2665,7 @@ class WalkDemoApp {
         this.teleporting = true;
         try {
             await this.setPortalFade(1);
+            this.portalActivation.disarmForArrival();
             await this.queueReloadScene(target);
             await this.setPortalFade(0);
         } finally {
