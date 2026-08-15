@@ -2634,7 +2634,6 @@ class WalkDemoApp {
     private updatePortalTrigger(walk: ViewerWalkMode, x: number, z: number): void {
         const current = portalAt(this.portals, x, z);
         const portalKey = current ? current.id ?? `${this.params.scheme}:${current.name}` : null;
-        const activation = this.portalActivation.observe(portalKey);
         if (current?.name !== this.insidePortalName) {
             if (this.insidePortalName) {
                 console.log(`[portal] exited ${this.insidePortalName}`);
@@ -2645,8 +2644,11 @@ class WalkDemoApp {
         }
         this.insidePortalName = current?.name;
         this.params.insidePortal = current?.name ?? '-';
-        if (current && activation.activate) {
-            void this.teleportThroughPortal(current);
+        if (!this.teleporting) {
+            const activation = this.portalActivation.observe(portalKey);
+            if (current && activation.activate) {
+                void this.teleportThroughPortal(current);
+            }
         }
         const floorY = walk.collisionGrid?.floorY;
         if (floorY !== undefined) {
