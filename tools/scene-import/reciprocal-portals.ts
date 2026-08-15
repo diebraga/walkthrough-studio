@@ -1,6 +1,7 @@
 import type { PlaceImport, PortalImport, SceneNodeImport } from "./discover.js";
 
 const TAU = 2 * Math.PI;
+const PORTAL_CLEARANCE = 0.7;
 
 export function completeReciprocalPortals(place: PlaceImport): PlaceImport {
   const nodesBySlug = new Map(place.nodes.map((node) => [node.slug, node]));
@@ -48,21 +49,27 @@ function createReversePortal(sourceNode: SceneNodeImport, forward: PortalImport)
     sourceKey: `generated-reverse:${forward.sourceKey}`,
     name: sourceNode.name,
     toNodeSlug: sourceNode.slug,
-    position: {
-      x: forward.spawn.x,
-      y: forward.spawn.y,
-      z: forward.spawn.z,
-    },
+    position: behindPose(forward.spawn, forward.radius),
     yaw: forward.spawn.yaw,
     radius: forward.radius,
     spawn: {
-      x: forward.position.x,
-      y: forward.position.y,
-      z: forward.position.z,
+      ...behindPose({ ...forward.position, yaw: forward.yaw }, forward.radius),
       yaw: normalizeYaw(forward.yaw + Math.PI),
       pitch: 0,
     },
     metadata: { generated: true, reverseOf: forward.sourceKey },
+  };
+}
+
+function behindPose(
+  pose: { x: number; y: number; z: number; yaw: number },
+  radius: number,
+): { x: number; y: number; z: number } {
+  const clearance = radius + PORTAL_CLEARANCE;
+  return {
+    x: pose.x + Math.sin(pose.yaw) * clearance,
+    y: pose.y,
+    z: pose.z + Math.cos(pose.yaw) * clearance,
   };
 }
 
