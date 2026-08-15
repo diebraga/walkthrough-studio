@@ -59,8 +59,14 @@ function fakeDatabase() {
   const places = new Map<string, { id: string }>();
   const nodes = new Map<string, { id: string }>();
   const assets = new Map<string, { id: string }>();
-  const portals = new Map<string, { id: string; data: Record<string, unknown> }>();
+  const portals = new Map<string, {
+    id: string;
+    fromNodeId: string;
+    sourceKey: string;
+    data: Record<string, unknown>;
+  }>();
   const sceneAssetDeleteCalls: Array<{ where: Record<string, unknown> }> = [];
+  const portalDeleteCalls: Array<{ where: Record<string, unknown> }> = [];
   let sequence = 0;
   const id = () => `id-${++sequence}`;
   const transaction = {
@@ -95,10 +101,27 @@ function fakeDatabase() {
       },
     },
     portal: {
+      deleteMany: async ({ where }: { where: Record<string, unknown> }) => {
+        portalDeleteCalls.push({ where });
+        const fromNodeId = String(where.fromNodeId);
+        const notIn = (where.sourceKey as { notIn?: string[] } | undefined)?.notIn;
+        for (const [key, portal] of portals) {
+          if (portal.fromNodeId !== fromNodeId) continue;
+          if (!notIn || !notIn.includes(portal.sourceKey)) portals.delete(key);
+        }
+      },
       upsert: async ({ where, create }: { where: { fromNodeId_sourceKey: { fromNodeId: string; sourceKey: string } }; create: Record<string, unknown> }) => {
         const key = `${where.fromNodeId_sourceKey.fromNodeId}:${where.fromNodeId_sourceKey.sourceKey}`;
-        if (!portals.has(key)) portals.set(key, { id: id(), data: create });
-        else portals.get(key)!.data = create;
+        if (!portals.has(key)) {
+          portals.set(key, {
+            id: id(),
+            fromNodeId: where.fromNodeId_sourceKey.fromNodeId,
+            sourceKey: where.fromNodeId_sourceKey.sourceKey,
+            data: create,
+          });
+        } else {
+          portals.get(key)!.data = create;
+        }
         return portals.get(key)!;
       },
     },
@@ -106,7 +129,7 @@ function fakeDatabase() {
   const database = {
     $transaction: async <T>(operation: (tx: typeof transaction) => Promise<T>) => operation(transaction),
   } as unknown as DatabaseClient;
-  return { database, places, nodes, assets, portals, sceneAssetDeleteCalls };
+  return { database, places, nodes, assets, portals, sceneAssetDeleteCalls, portalDeleteCalls };
 }
 
 test("upserts the graph idempotently and resolves portal node IDs", async () => {
@@ -244,4 +267,75 @@ test("deletes all scene assets when the plan has no assets", async () => {
   });
 
   assert.deepEqual(fake.sceneAssetDeleteCalls, [{ where: { sceneNodeId: "node-id-1-empty" } }]);
+});
+
+test("reconciles stale outgoing portals against each node's planned keys", async () => {
+  const fake = fakeDatabase();
+  const plan = samplePlan();
+  plan.places[0].nodes[1].portals = [{
+    sourceKey: "sample/balcony/portals.json#0",
+    name: "hall",
+    toNodeSlug: "hall",
+    position: { x: 5, y: 6, z: 7 },
+    yaw: 8,
+    radius: 0.8,
+    spawn: { x: 1, y: 2, z: 3, yaw: 4, pitch: 5 },
+    metadata: null,
+  }];
+  const generatedReverseKey = "node-id-1-balcony:generated-reverse:sample/hall/portals.json#0";
+  fake.portals.set("node-id-1-hall:stale", {
+    id: "stale-hall",
+    fromNodeId: "node-id-1-hall",
+    sourceKey: "stale",
+    data: {},
+  });
+  fake.portals.set(generatedReverseKey, {
+    id: "stale-generated-reverse",
+    fromNodeId: "node-id-1-balcony",
+    sourceKey: "generated-reverse:sample/hall/portals.json#0",
+    data: {},
+  });
+
+  await persistSceneImport(fake.database, plan);
+
+  assert.deepEqual(fake.portalDeleteCalls, [
+    {
+      where: {
+        fromNodeId: "node-id-1-hall",
+        sourceKey: { notIn: ["sample/hall/portals.json#0"] },
+      },
+    },
+    {
+      where: {
+        fromNodeId: "node-id-1-balcony",
+        sourceKey: { notIn: ["sample/balcony/portals.json#0"] },
+      },
+    },
+  ]);
+  assert.equal(fake.portals.has("node-id-1-hall:stale"), false);
+  assert.equal(fake.portals.has(generatedReverseKey), false);
+  assert.equal(fake.portals.has("node-id-1-balcony:sample/balcony/portals.json#0"), true);
+});
+
+test("deletes every outgoing portal when a node has an empty portal plan", async () => {
+  const fake = fakeDatabase();
+  fake.portals.set("node-id-1-balcony:stale", {
+    id: "stale-balcony",
+    fromNodeId: "node-id-1-balcony",
+    sourceKey: "stale",
+    data: {},
+  });
+
+  await persistSceneImport(fake.database, samplePlan());
+
+  assert.deepEqual(fake.portalDeleteCalls, [
+    {
+      where: {
+        fromNodeId: "node-id-1-hall",
+        sourceKey: { notIn: ["sample/hall/portals.json#0"] },
+      },
+    },
+    { where: { fromNodeId: "node-id-1-balcony" } },
+  ]);
+  assert.equal(fake.portals.has("node-id-1-balcony:stale"), false);
 });

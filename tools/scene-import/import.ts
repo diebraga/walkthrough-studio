@@ -95,6 +95,18 @@ export async function persistSceneImport(
     for (const place of plan.places) {
       for (const node of place.nodes) {
         const fromNodeId = requiredNodeId(nodeIds, place.slug, node.slug);
+        const sourceKeys = node.portals.map((portal) => portal.sourceKey);
+        await tx.portal.deleteMany({
+          where: sourceKeys.length
+            ? { fromNodeId, sourceKey: { notIn: sourceKeys } }
+            : { fromNodeId },
+        });
+      }
+    }
+
+    for (const place of plan.places) {
+      for (const node of place.nodes) {
+        const fromNodeId = requiredNodeId(nodeIds, place.slug, node.slug);
         for (const portal of node.portals) {
           const toNodeId = requiredNodeId(nodeIds, place.slug, portal.toNodeSlug);
           const data = {
