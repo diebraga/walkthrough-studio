@@ -1,5 +1,6 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
+import { completeReciprocalPortals } from "./reciprocal-portals.js";
 
 export type SceneAssetImportType =
   | "GAUSSIAN_SPLAT"
@@ -72,13 +73,13 @@ export async function discoverSceneImport(rootDirectory: string): Promise<SceneI
       nodes.push(await discoverNode(root, rootPrefix, placeEntry, nodeEntry));
     }
     if (!nodes.length) continue;
-    places.push({
+    places.push(completeReciprocalPortals({
       slug: placeEntry,
       name: KNOWN_PLACE_NAMES[placeEntry] ?? humanizeSlug(placeEntry),
       description: null,
       metadata: { importPath: sourcePath(rootPrefix, placeEntry) },
       nodes,
-    });
+    }));
   }
 
   return { places };

@@ -104,5 +104,5 @@ test("discovers the current repository dataset completely", async () => {
   assert.equal(plan.places[0].slug, "23_nashville_dr_tenessee");
   assert.equal(plan.places[0].nodes.length, 2);
   assert.equal(plan.places[0].nodes.flatMap((node) => node.assets).length, 5);
-  assert.equal(plan.places[0].nodes.flatMap((node) => node.portals).length, 1);
+  assert.equal(plan.places[0].nodes.flatMap((node) => node.portals).length, 2);
 });
