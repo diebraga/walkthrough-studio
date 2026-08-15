@@ -30,13 +30,18 @@ and no generated record is created. Otherwise the importer generates one
 directional `B -> A` record with a stable source key derived from the original
 portal source key.
 
-The generated return portal uses:
+The generated return portal follows the placement rules in the
+[safe floor-circle portals design](2026-08-15-safe-floor-circle-portals-design.md):
 
-- position: the forward portal's configured destination spawn position in B;
+- position: behind the forward portal's configured destination spawn position
+  in B by the forward portal's radius plus `0.7` metres, preserving that spawn's
+  Y coordinate;
 - yaw: the forward portal's destination spawn yaw;
 - radius: the forward portal's radius;
 - destination: node A;
-- return spawn position: the forward portal's original position in A;
+- return spawn position: behind the forward portal's original position in A by
+  the forward portal's radius plus `0.7` metres, preserving that position's Y
+  coordinate;
 - return spawn yaw: the forward portal yaw rotated by 180 degrees and normalized;
 - return spawn pitch: `0`;
 - metadata identifying it as generated and recording the originating source key.
