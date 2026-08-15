@@ -2982,7 +2982,7 @@ class WalkDemoApp {
         sceneLoop.setThirdPersonEnabled(showAvatar);
         const walker = walkLoop.getCharacterState().position;
         this.updatePortalTrigger(walkLoop, walker.x, walker.z);
-        this.portalRenderer?.tick(deltaClamped);
+        // Local edit: the portal renderer is static floor geometry, so no per-frame update is needed.
         sceneLoop.updateCamera(walkLoop.getCameraState());
         if (scheme.splatMode === 'lod') {
             sceneLoop.tickLod();

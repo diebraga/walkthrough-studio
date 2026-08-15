@@ -14,11 +14,8 @@ const PORTAL = 0x33bbff;
 const PORTAL_ACTIVE = 0xffd400;
 
 export const PORTAL_VISUAL = {
-    beamHeight: 2.4,
-    beamWidth: 0.22,
     glowRadius: 1.7,
     floorOffset: 0.12,
-    spinSpeed: 0.6,
     renderOrder: 10_000,
 } as const;
 
@@ -41,8 +38,8 @@ function hexToRgb(hex: number): [number, number, number] {
 }
 
 /**
- * Build one portal's marker in local space: a ground glow and crossed light
- * beams. The black edge/top vertices become invisible under additive blending.
+ * Build one portal's marker in local space as a planar radial glow. The black
+ * edge vertices become invisible under additive blending.
  */
 export function buildPortalMarker(radius: number, colorHex: number): PortalMarkerGeometry {
     const positions: number[] = [];
@@ -60,36 +57,12 @@ export function buildPortalMarker(radius: number, colorHex: number): PortalMarke
         colors.push(0, 0, 0);
     }
 
-    const halfWidth = PORTAL_VISUAL.beamWidth / 2;
-    for (let i = 0; i < 4; i++) {
-        const angle = (i / 4) * Math.PI * 2;
-        const dx = Math.cos(angle) * halfWidth;
-        const dz = Math.sin(angle) * halfWidth;
-        const corners: [number, number, number][] = [
-            [-dx, 0, -dz],
-            [dx, 0, dz],
-            [dx, PORTAL_VISUAL.beamHeight, dz],
-            [-dx, PORTAL_VISUAL.beamHeight, -dz],
-        ];
-        const vertexColors: [number, number, number][] = [
-            [r, g, b],
-            [r, g, b],
-            [0, 0, 0],
-            [0, 0, 0],
-        ];
-        for (const index of [0, 1, 2, 0, 2, 3]) {
-            positions.push(...corners[index]!);
-            colors.push(...vertexColors[index]!);
-        }
-    }
-
     return { positions, colors };
 }
 
 export class PortalRenderer {
     private readonly scene: Scene3D;
     private meshes: InstanceType<typeof Mesh>[] = [];
-    private spin = 0;
     private key = '';
     private visible = true;
 
@@ -124,16 +97,6 @@ export class PortalRenderer {
         this.visible = visible;
         for (const mesh of this.meshes) {
             mesh.visible = visible;
-        }
-    }
-
-    tick(dt: number): void {
-        if (!this.meshes.length) {
-            return;
-        }
-        this.spin += dt * PORTAL_VISUAL.spinSpeed;
-        for (const mesh of this.meshes) {
-            mesh.rotation.y = this.spin;
         }
     }
 

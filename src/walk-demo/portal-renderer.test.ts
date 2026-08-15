@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 // aholo-viewer reads these browser globals while its module graph initializes.
 globalThis.requestAnimationFrame ??= () => 0;
 globalThis.cancelAnimationFrame ??= () => {};
@@ -42,11 +43,8 @@ const {
 } = portalRendererModule;
 
 assert.deepEqual(PORTAL_VISUAL, {
-    beamHeight: 2.4,
-    beamWidth: 0.22,
     glowRadius: 1.7,
     floorOffset: 0.12,
-    spinSpeed: 0.6,
     renderOrder: 10_000,
 });
 
@@ -59,10 +57,12 @@ for (let index = 0; index < positions.length; index += 3) {
     radialExtent = Math.max(radialExtent, Math.hypot(positions[index]!, positions[index + 2]!));
     minY = Math.min(minY, positions[index + 1]!);
     maxY = Math.max(maxY, positions[index + 1]!);
+    assert.equal(positions[index + 1], 0);
 }
-assert.ok(Math.abs(radialExtent - PORTAL_VISUAL.glowRadius) < 1e-9);
+assert.equal(Number(radialExtent.toFixed(12)), PORTAL_VISUAL.glowRadius);
 assert.equal(minY, 0);
-assert.equal(maxY, PORTAL_VISUAL.beamHeight);
+assert.equal(maxY, 0);
+assert.equal(positions.length / 9, 24);
 
 assert.deepEqual(PORTAL_MATERIAL_OPTIONS, {
     enableVertexColor: true,
@@ -72,3 +72,6 @@ assert.deepEqual(PORTAL_MATERIAL_OPTIONS, {
     depthWrite: false,
     side: Side.DoubleSide,
 });
+
+const walkDemoSource = readFileSync(new URL('./walk-demo.ts', import.meta.url), 'utf8');
+assert.ok(!walkDemoSource.includes('.portalRenderer?.tick('));
