@@ -2375,7 +2375,6 @@ class WalkDemoApp {
         showCollision: boolean;
         preset: WalkPresetId;
         fps: string;
-        showPortals: boolean;
         portalName: string;
         portalStatus: string;
         insidePortal: string;
@@ -2424,9 +2423,6 @@ class WalkDemoApp {
             // Debug views default OFF and remember their last state, so a reload
             // never drops you into a scene full of debug geometry.
             showCollision: readDevToggle('showCollision'),
-            // Separate from showCollision on purpose: the common case while
-            // authoring is markers on with the collision overlay off.
-            showPortals: readDevToggle('showPortals'),
             portalName: '',
             portalStatus: '-',
             insidePortal: '-',
@@ -2552,10 +2548,6 @@ class WalkDemoApp {
     /** Capture UI plus the per-portal list. Developer setting only. */
     private mountPortalPanel(pane: Pane): void {
         const folder = pane.addFolder({ title: 'Portals' });
-        folder.addBinding(this.params, 'showPortals', { label: 'Show portals' }).on('change', () => {
-            writeDevToggle('showPortals', this.params.showPortals);
-            this.portalRenderer?.setVisible(this.params.showPortals);
-        });
         folder.addBinding(this.params, 'portalName', { label: 'Name' });
         folder.addButton({ title: 'Add portal here' }).on('click', () => {
             void this.capturePortal();
@@ -3127,7 +3119,6 @@ class WalkDemoApp {
             this.collisionDebug.setVisible(this.params.showCollision);
             this.collisionDebug.updateManualCollision(this.manualCollision);
             this.portalRenderer = new PortalRenderer(this.ctx.renderer.scene);
-            this.portalRenderer.setVisible(this.params.showPortals);
 
             this.ctx.renderer.resize();
             this.running = true;
