@@ -73,9 +73,10 @@ are holes in the collision.
 
 ## `portals`
 
-Portal landmarks are always shown to visitors. The `portals` flag adds a
-**Portals** folder for developer-only authoring controls while walking the
-scene.
+Portal landmarks are always shown to visitors. Each has a blue/cyan additive
+ground glow and a 2.4 m crossed-light beam; the landmark turns yellow while the
+walker is inside it. The `portals` flag adds a **Portals** folder for
+developer-only authoring controls while walking the scene.
 
 | Control | Does |
 |---|---|
@@ -85,10 +86,10 @@ scene.
 | inside | Portal you are currently standing in |
 | *(per portal)* | Read-only x/y/z, a radius slider, and Delete |
 
-Portals are drawn in the 3D view as a ring of posts with a centre pole — blue
-normally, yellow while you are inside one. Entering and leaving logs
-`[portal] entered <name>` / `[portal] exited <name>`, edge-triggered so it fires
-once per transition rather than every frame.
+Linked portals are traversable doorways, including the importer-generated
+reciprocal return direction. Entering and leaving logs `[portal] entered <name>`
+/ `[portal] exited <name>`, edge-triggered so it fires once per transition
+rather than every frame.
 
 After a linked portal changes scenes, arrival is deliberately disarmed while
 the walker remains inside any destination portal radius. The destination marker

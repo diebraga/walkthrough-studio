@@ -1,10 +1,9 @@
 /**
  * Portals: named points inside a scene, captured while walking it.
  *
- * Right now they only log when you walk in and out. Later a portal grows a
- * target scene and an arrival pose and becomes a doorway between scans — the
- * `to` and `spawn` fields are already in the file so the shape does not change
- * when that happens.
+ * Linked portals are traversable doorways between scans. The importer completes
+ * a forward link with a reciprocal return direction unless an explicit reverse
+ * portal already exists; `to` and `spawn` describe the forward destination.
  *
  * Stored next to the splat as public/<property>/<scene>/portals.json, written by
  * the dev-only Vite endpoint in tools/portal-write-plugin.ts.

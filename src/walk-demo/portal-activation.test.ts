@@ -41,10 +41,24 @@ assert.match(
     'gate observation pauses while teleporting and runs again when teleporting clears',
 );
 
-const sceneSelectionStart = source.indexOf("pane.addBinding(this.params, 'scheme'");
+const sceneSelectionStart = source.indexOf("this.sceneBinding = pane.addBinding(this.params, 'scheme'");
 const sceneSelectionEnd = source.indexOf(".addBinding(this.params, 'thirdPersonCharacter'", sceneSelectionStart);
 const sceneSelection = source.slice(sceneSelectionStart, sceneSelectionEnd);
 assert.match(sceneSelection, /this\.portalActivation\.reset\(\);\s+void this\.queueReloadScene\(\);/);
+assert.match(
+    sceneSelection,
+    /this\.sceneBinding = pane\.addBinding\(this\.params, 'scheme', \{[\s\S]*?\}\)\.on\('change'/,
+    'keeps the Scene binding so programmatic portal scene changes can refresh its displayed value',
+);
+
+const reloadStart = source.indexOf('private async reloadScene');
+const reloadEnd = source.indexOf('private async tryLoadCollision', reloadStart);
+const reload = source.slice(reloadStart, reloadEnd);
+assert.match(
+    reload,
+    /if \(options\.scheme\) \{\s+this\.params\.scheme = options\.scheme;\s+this\.sceneBinding\?\.refresh\(\);\s+\}/,
+    'refreshes the Scene binding after an internal reload changes params.scheme',
+);
 
 const teleportStart = source.indexOf('private async teleportThroughPortal');
 const teleportEnd = source.indexOf('private setPortalFade', teleportStart);
@@ -53,6 +67,4 @@ assert.ok(teleport.indexOf('await this.setPortalFade(1);') < teleport.indexOf('t
 assert.ok(teleport.indexOf('this.portalActivation.disarmForArrival();') < teleport.indexOf('await this.queueReloadScene(target);'));
 assert.match(teleport, /finally \{\s+this\.teleporting = false;\s+\}/);
 
-const reloadStart = source.indexOf('private async reloadScene');
-const reloadEnd = source.indexOf('private async tryLoadCollision', reloadStart);
 assert.ok(!source.slice(reloadStart, reloadEnd).includes('this.portalActivation.reset()'));

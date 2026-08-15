@@ -114,8 +114,9 @@ npx wrangler r2 bucket cors set walkthrough-studio-assets --file config/r2-cors.
 
 `VITE_SPLAT_BASE_URL` can be configured for Vercel Preview, but arbitrary Vercel
 preview origins are not currently supported by the R2 CORS policy: it allows
-only localhost and the production origin. Preview use requires a stable preview
-hostname added to that policy or a separately reviewed public-origin policy.
+only `http://localhost:5173` and the production origin. Preview use requires a
+stable preview hostname added to that policy or a separately reviewed
+public-origin policy.
 
 Upload the current Nashville assets under their stable runtime keys with:
 

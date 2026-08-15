@@ -2397,6 +2397,7 @@ class WalkDemoApp {
     private reloadChain: Promise<void> = Promise.resolve();
     private hideLoadingOnFrame = false;
     private restoredCamera: ReturnType<Viewer['getCamera']> | undefined;
+    private sceneBinding: { refresh(): void } | undefined;
     private thirdPersonCharacterBinding: { refresh(): void } | undefined;
     private portalFade: HTMLDivElement | undefined;
     private mobileJoystick: HTMLDivElement | undefined;
@@ -2463,7 +2464,7 @@ class WalkDemoApp {
                 .filter((scheme) => scheme.source === 'database')
                 .map((scheme) => [scheme.name, scheme.id]),
         );
-        pane.addBinding(this.params, 'scheme', {
+        this.sceneBinding = pane.addBinding(this.params, 'scheme', {
             label: ui.schemeLabel,
             options: sceneOptions,
         }).on('change', () => {
@@ -3015,6 +3016,7 @@ class WalkDemoApp {
         const generation = ++this.reloadGeneration;
         if (options.scheme) {
             this.params.scheme = options.scheme;
+            this.sceneBinding?.refresh();
         }
         const scheme = this.schemes[this.params.scheme];
         const useOpeningTransition = this.firstSceneLoad && !options.skipOpeningTransition;
