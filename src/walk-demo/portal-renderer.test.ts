@@ -16,12 +16,30 @@ for (const name of ['HTMLImageElement', 'HTMLVideoElement', 'OffscreenCanvas', '
     browserGlobals[name] ??= class {};
 }
 
-const { Blending, Side } = await import('@manycore/aholo-viewer');
+const nativeSetTimeout = globalThis.setTimeout;
+globalThis.setTimeout = ((...args: Parameters<typeof setTimeout>) => {
+    const timeout = nativeSetTimeout(...args);
+    if (args[1] === 600_000) {
+        (timeout as unknown as { unref?(): void }).unref?.();
+    }
+    return timeout;
+}) as typeof setTimeout;
+
+let viewerModule!: typeof import('@manycore/aholo-viewer');
+let portalRendererModule!: typeof import('./portal-renderer');
+try {
+    viewerModule = await import('@manycore/aholo-viewer');
+    portalRendererModule = await import('./portal-renderer');
+} finally {
+    globalThis.setTimeout = nativeSetTimeout;
+}
+
+const { Blending, Side } = viewerModule;
 const {
     PORTAL_MATERIAL_OPTIONS,
     PORTAL_VISUAL,
     buildPortalMarker,
-} = await import('./portal-renderer');
+} = portalRendererModule;
 
 assert.deepEqual(PORTAL_VISUAL, {
     beamHeight: 2.4,
