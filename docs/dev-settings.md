@@ -73,9 +73,9 @@ are holes in the collision.
 
 ## `portals`
 
-Portal landmarks are always shown to visitors. Each has a blue/cyan additive
-ground glow and a 2.4 m crossed-light beam; the landmark turns yellow while the
-walker is inside it. The `portals` flag adds a **Portals** folder for
+Portal landmarks are always shown to visitors. Each is a static blue/cyan
+additive floor circle; the landmark turns yellow while the walker is inside it.
+The `portals` flag adds a **Portals** folder for
 developer-only authoring controls while walking the scene.
 
 | Control | Does |

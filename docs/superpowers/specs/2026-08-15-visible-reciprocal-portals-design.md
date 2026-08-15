@@ -13,19 +13,11 @@ in the active scene is visible in development and production without a flag,
 toggle, or local-storage setting. The developer portal panel remains gated by
 the existing `portals` flag for capture, editing, and deletion only.
 
-The selected balanced treatment uses:
-
-- a `2.4` metre vertical beam;
-- a `1.7` metre ground-glow radius;
-- a small positive floor offset so the base sits above splat haze;
-- additive, double-sided rendering with both depth testing and depth writing
-  disabled;
-- an explicit high render order so the portal remains legible over splats.
-
-The normal portal remains blue and the portal currently containing the walker
-remains yellow. The subtle beam rotation continues. Portal geometry and
-materials move into a portal-specific renderer rather than remaining coupled to
-the manual-collision debug overlay.
+The placement and presentation details in this design are superseded by the
+[safe floor-circle portals design](2026-08-15-safe-floor-circle-portals-design.md).
+Portals are static floor circles; their geometry and materials live in a
+portal-specific renderer rather than remaining coupled to the manual-collision
+debug overlay.
 
 ## Reciprocal data model
 
@@ -94,7 +86,7 @@ database and browser.
 
 ## Verification
 
-- Geometry tests assert the selected beam height, glow radius, floor offset,
+- Geometry tests assert the flat floor-circle radius, floor offset,
   depth-independent material settings, and render order.
 - Import tests cover reverse generation, explicit-reverse precedence, stable
   idempotent keys, return yaw normalization, and stale generated-row removal.
@@ -103,7 +95,4 @@ database and browser.
   arrival portals.
 - Runtime tests assert portal visuals are created when no developer flags are
   active.
-- Database inspection confirms both hall-to-balcony and balcony-to-hall records.
-- A browser smoke test traverses hall to balcony, remains there while standing
-  at the arrival point, exits and re-enters the portal, and returns to hall.
-- Convention tests, database tests, and the production build pass.
+- Focused generic portal tests, convention tests, and the production build pass.
