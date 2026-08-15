@@ -4,20 +4,20 @@ import { PortalActivationGate } from './portal-activation';
 
 const gate = new PortalActivationGate();
 
-assert.deepEqual(gate.observe('hall:balcony'), { activate: true, armed: true });
-assert.deepEqual(gate.observe('hall:balcony'), { activate: false, armed: true });
+assert.deepEqual(gate.observe('origin:destination'), { activate: true, armed: true });
+assert.deepEqual(gate.observe('origin:destination'), { activate: false, armed: true });
 
 gate.disarmForArrival();
-assert.deepEqual(gate.observe('balcony:hall'), { activate: false, armed: false });
-assert.deepEqual(gate.observe('balcony:overlapping'), { activate: false, armed: false });
+assert.deepEqual(gate.observe('destination:origin'), { activate: false, armed: false });
+assert.deepEqual(gate.observe('destination:overlapping'), { activate: false, armed: false });
 assert.deepEqual(gate.observe(null), { activate: false, armed: true });
 
-assert.deepEqual(gate.observe('balcony:hall'), { activate: true, armed: true });
-assert.deepEqual(gate.observe('balcony:hall'), { activate: false, armed: true });
+assert.deepEqual(gate.observe('destination:origin'), { activate: true, armed: true });
+assert.deepEqual(gate.observe('destination:origin'), { activate: false, armed: true });
 
 gate.disarmForArrival();
 gate.reset();
-assert.deepEqual(gate.observe('balcony:hall'), { activate: true, armed: true });
+assert.deepEqual(gate.observe('destination:origin'), { activate: true, armed: true });
 
 const source = readFileSync(new URL('./walk-demo.ts', import.meta.url), 'utf8');
 assert.ok(source.includes("import { PortalActivationGate } from './portal-activation';"));

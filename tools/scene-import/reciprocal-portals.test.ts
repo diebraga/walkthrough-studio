@@ -85,16 +85,38 @@ test("generates a reciprocal portal with the forward portal's return geometry", 
 
 test("keeps explicit reverse portals authoritative", () => {
   const input = place();
-  input.nodes[1].portals.push(portal({
+  const explicitReverse = portal({
     sourceKey: "example/destination/portals.json#0",
     name: "Origin",
     toNodeSlug: "origin",
-  }));
+    position: { x: -11, y: 4.5, z: 23 },
+    yaw: -Math.PI / 7,
+    radius: 2.4,
+    spawn: { x: 31, y: -2, z: -17, yaw: Math.PI / 9, pitch: -0.3 },
+  });
+  input.nodes[1].portals.push(explicitReverse);
+  const authoredGeometry = structuredClone({
+    position: explicitReverse.position,
+    yaw: explicitReverse.yaw,
+    radius: explicitReverse.radius,
+    spawn: explicitReverse.spawn,
+  });
 
   const completed = completeReciprocalPortals(input);
+  const completedReverse = completed.nodes.find((node) => node.slug === "destination")?.portals[0];
 
   assert.equal(completed.nodes.find((node) => node.slug === "destination")?.portals.length, 1);
-  assert.equal(completed.nodes.find((node) => node.slug === "destination")?.portals[0].sourceKey, "example/destination/portals.json#0");
+  assert.ok(completedReverse);
+  assert.equal(completedReverse.sourceKey, "example/destination/portals.json#0");
+  assert.deepEqual(
+    {
+      position: completedReverse.position,
+      yaw: completedReverse.yaw,
+      radius: completedReverse.radius,
+      spawn: completedReverse.spawn,
+    },
+    authoredGeometry,
+  );
 });
 
 test("generates a stable return for every forward portal when no explicit reverse exists", () => {

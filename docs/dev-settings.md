@@ -138,10 +138,12 @@ is in the hall. Walk the target scene, use **Copy position** to capture that pos
 and place it on the forward portal before running `pnpm db:import`.
 
 You do not need to author a second portal solely to make the doorway reversible.
-The importer creates a default return direction at the forward destination
-spawn, pointing back to the original portal. If the return needs different
-placement, radius, or arrival pose, author an explicit target-to-source portal;
-that explicit reverse takes precedence over the generated default.
+The importer places the generated reverse portal behind the authored forward
+destination spawn, and its return landing behind the original forward portal.
+Each offset uses the corresponding pose's yaw and clears the trigger by the
+portal radius plus `0.7` metres. If the return needs different placement,
+radius, or arrival pose, author an explicit target-to-source portal; that
+explicit reverse takes precedence over the generated default.
 
 ## Adding a flag
 
