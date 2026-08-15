@@ -34,6 +34,7 @@ import {
 } from '@manycore/aholo-viewer';
 import type { Scene3D, Viewer } from '@manycore/aholo-viewer';
 import { CollisionDebugOverlay } from './collision-debug';
+import { PortalRenderer } from './portal-renderer';
 import { activeDevFlags, devEnabled, envDevFlagsActive, readDevToggle, writeDevToggle } from './dev-settings';
 import {
     ANNEAL_DURATION_MS,
@@ -2386,6 +2387,7 @@ class WalkDemoApp {
     private portalsFolder: FolderApi | undefined;
     private portalRows: FolderApi[] = [];
     private collisionDebug: CollisionDebugOverlay | undefined;
+    private portalRenderer: PortalRenderer | undefined;
     private scene: WalkDemoScene | undefined;
     private walk: ViewerWalkMode | undefined;
     private running = false;
@@ -2552,7 +2554,7 @@ class WalkDemoApp {
         const folder = pane.addFolder({ title: 'Portals' });
         folder.addBinding(this.params, 'showPortals', { label: 'Show portals' }).on('change', () => {
             writeDevToggle('showPortals', this.params.showPortals);
-            this.collisionDebug?.setPortalsVisible(this.params.showPortals);
+            this.portalRenderer?.setVisible(this.params.showPortals);
         });
         folder.addBinding(this.params, 'portalName', { label: 'Name' });
         folder.addButton({ title: 'Add portal here' }).on('click', () => {
@@ -2650,7 +2652,7 @@ class WalkDemoApp {
         }
         const floorY = walk.collisionGrid?.floorY;
         if (floorY !== undefined) {
-            this.collisionDebug?.updatePortals(this.portals, this.insidePortalName, floorY);
+            this.portalRenderer?.update(this.portals, this.insidePortalName, floorY);
         }
     }
 
@@ -2978,7 +2980,7 @@ class WalkDemoApp {
         sceneLoop.setThirdPersonEnabled(showAvatar);
         const walker = walkLoop.getCharacterState().position;
         this.updatePortalTrigger(walkLoop, walker.x, walker.z);
-        this.collisionDebug?.tick(deltaClamped);
+        this.portalRenderer?.tick(deltaClamped);
         sceneLoop.updateCamera(walkLoop.getCameraState());
         if (scheme.splatMode === 'lod') {
             sceneLoop.tickLod();
@@ -3019,6 +3021,8 @@ class WalkDemoApp {
         this.running = false;
         this.collisionDebug?.dispose();
         this.collisionDebug = undefined;
+        this.portalRenderer?.dispose();
+        this.portalRenderer = undefined;
         this.walk?.dispose();
         this.walk = undefined;
         this.scene?.dispose();
@@ -3121,8 +3125,9 @@ class WalkDemoApp {
             // Already disposed at the top of this method.
             this.collisionDebug = new CollisionDebugOverlay(this.ctx.renderer.scene);
             this.collisionDebug.setVisible(this.params.showCollision);
-            this.collisionDebug.setPortalsVisible(this.params.showPortals);
             this.collisionDebug.updateManualCollision(this.manualCollision);
+            this.portalRenderer = new PortalRenderer(this.ctx.renderer.scene);
+            this.portalRenderer.setVisible(this.params.showPortals);
 
             this.ctx.renderer.resize();
             this.running = true;
@@ -3217,6 +3222,8 @@ class WalkDemoApp {
         this.running = false;
         this.collisionDebug?.dispose();
         this.collisionDebug = undefined;
+        this.portalRenderer?.dispose();
+        this.portalRenderer = undefined;
         this.walk?.dispose();
         this.walk = undefined;
         this.scene?.dispose();
