@@ -5,9 +5,11 @@
  * a forward link with a reciprocal return direction unless an explicit reverse
  * portal already exists; `to` and `spawn` describe the forward destination.
  *
- * Stored next to the splat as public/<property>/<scene>/portals.json, written by
- * the dev-only Vite endpoint in tools/portal-write-plugin.ts.
+ * Runtime portals are loaded from Neon through the scene graph API. Legacy
+ * portals.json files remain importer inputs rather than runtime authority.
  */
+
+import type { RuntimeScenePose } from './scene-catalog';
 
 export interface Portal {
     /** Persistent database identity when this portal came from Neon. */
@@ -28,44 +30,6 @@ export interface Portal {
 
 const DEFAULT_RADIUS = 0.8;
 
-/** Load a scene's portals. A missing file is normal — most scenes have none. */
-export async function loadPortals(sceneBase: string, signal?: AbortSignal): Promise<Portal[]> {
-    try {
-        const res = await fetch(`${sceneBase}portals.json`, { signal });
-        if (!res.ok) {
-            return [];
-        }
-        const data = (await res.json()) as { portals?: Portal[] };
-        return Array.isArray(data.portals) ? data.portals : [];
-    } catch (error) {
-        if ((error as Error)?.name === 'AbortError') {
-            throw error;
-        }
-        return [];
-    }
-}
-
-/**
- * Persist via the dev endpoint. Returns an error string rather than throwing:
- * the caller shows it in the panel, so a failed save is visible instead of
- * silently losing a capture.
- */
-export async function savePortals(sceneBase: string, portals: Portal[]): Promise<string | null> {
-    // '/23_nashville_dr_tenessee/hall/' -> '23_nashville_dr_tenessee/hall'
-    const scenePath = sceneBase.replace(/^\/+/, '').replace(/\/+$/, '');
-    try {
-        const res = await fetch('/__dev/portals', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ scenePath, portals }),
-        });
-        const data = (await res.json()) as { ok?: boolean; error?: string };
-        return data.ok ? null : (data.error ?? `HTTP ${res.status}`);
-    } catch (error) {
-        return String((error as Error)?.message ?? error);
-    }
-}
-
 /** `portal_1`, `portal_2`, ... skipping names already taken. */
 export function nextPortalName(portals: readonly Portal[]): string {
     const taken = new Set(portals.map((p) => p.name));
@@ -79,13 +43,26 @@ export function nextPortalName(portals: readonly Portal[]): string {
 
 export function createPortal(
     name: string,
-    x: number,
-    y: number,
-    z: number,
+    position: { x: number; y: number; z: number },
     yaw: number,
+    destination: { id: string; pose: RuntimeScenePose },
     radius = DEFAULT_RADIUS,
 ): Portal {
-    return { name, position: { x, y, z }, yaw, radius, toNodeId: null, to: null, spawn: null };
+    return {
+        name,
+        position,
+        yaw,
+        radius,
+        toNodeId: destination.id,
+        to: null,
+        spawn: {
+            x: destination.pose.px,
+            y: destination.pose.py,
+            z: destination.pose.pz,
+            yaw: destination.pose.yaw,
+            pitch: destination.pose.pitch,
+        },
+    };
 }
 
 /**
