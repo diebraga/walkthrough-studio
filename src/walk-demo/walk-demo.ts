@@ -35,6 +35,12 @@ import {
 import type { Scene3D, Viewer } from '@manycore/aholo-viewer';
 import { CollisionDebugOverlay } from './collision-debug';
 import { PortalActivationGate } from './portal-activation';
+import {
+    createDatabasePortal,
+    deleteDatabasePortal,
+    portalDestinationOptions,
+    updateDatabasePortalRadius,
+} from './portal-authoring';
 import { PortalRenderer } from './portal-renderer';
 import { activeDevFlags, devEnabled, envDevFlagsActive, readDevToggle, writeDevToggle } from './dev-settings';
 import {
@@ -47,7 +53,6 @@ import {
     createPortal,
     nextPortalName,
     portalAt,
-    savePortals,
     type Portal,
 } from './portals';
 import { resolvePortalTeleport, type TeleportPose } from './teleport';
@@ -2377,6 +2382,7 @@ class WalkDemoApp {
         preset: WalkPresetId;
         fps: string;
         portalName: string;
+        portalDestination: string;
         portalStatus: string;
         insidePortal: string;
         positionStatus: string;
@@ -2386,6 +2392,7 @@ class WalkDemoApp {
     private manualCollision: ManualCollisionData = { ...EMPTY_MANUAL_COLLISION, floors: [], walls: [] };
     private portalsFolder: FolderApi | undefined;
     private portalRows: FolderApi[] = [];
+    private portalPane: Pane | undefined;
     private collisionDebug: CollisionDebugOverlay | undefined;
     private portalRenderer: PortalRenderer | undefined;
     private readonly portalActivation = new PortalActivationGate();
@@ -2427,6 +2434,7 @@ class WalkDemoApp {
             // never drops you into a scene full of debug geometry.
             showCollision: readDevToggle('showCollision'),
             portalName: '',
+            portalDestination: '',
             portalStatus: '-',
             insidePortal: '-',
             positionStatus: '-',
@@ -2473,6 +2481,8 @@ class WalkDemoApp {
             // whatever character is selected instead.
             this.thirdPersonCharacterBinding?.refresh();
             this.portalActivation.reset();
+            this.params.portalDestination = '';
+            this.mountPortalPanel(pane);
             void this.queueReloadScene();
         });
         this.thirdPersonCharacterBinding = pane
@@ -2551,8 +2561,19 @@ class WalkDemoApp {
 
     /** Capture UI plus the per-portal list. Developer setting only. */
     private mountPortalPanel(pane: Pane): void {
+        this.portalsFolder?.dispose();
+        this.portalRows = [];
+        this.portalPane = pane;
         const folder = pane.addFolder({ title: 'Portals' });
+        const destinations = portalDestinationOptions(this.schemes, this.params.scheme);
+        if (!Object.values(destinations).includes(this.params.portalDestination)) {
+            this.params.portalDestination = Object.values(destinations)[0] ?? '';
+        }
         folder.addBinding(this.params, 'portalName', { label: 'Name' });
+        folder.addBinding(this.params, 'portalDestination', {
+            label: 'Destination',
+            options: destinations,
+        });
         folder.addButton({ title: 'Add portal here' }).on('click', () => {
             void this.capturePortal();
         });
@@ -2567,8 +2588,12 @@ class WalkDemoApp {
     /** Record a portal where the walker is standing, then persist. */
     private async capturePortal(): Promise<void> {
         const walk = this.walk;
-        const base = this.schemes[this.params.scheme].assetBase;
-        if (!walk || !base) {
+        if (!walk) {
+            return;
+        }
+        const destination = this.schemes[this.params.portalDestination];
+        if (!destination || destination.source !== 'database' || destination.id === this.params.scheme) {
+            this.params.portalStatus = 'choose a destination';
             return;
         }
         const state = walk.getCharacterState();
@@ -2577,17 +2602,15 @@ class WalkDemoApp {
             this.params.portalStatus = `name '${name}' already used`;
             return;
         }
-        this.portals.push(createPortal(name, state.position.x, state.position.y, state.position.z, state.yaw));
-        this.params.portalName = '';
-        this.rebuildPortalList();
-        await this.persistPortals(base);
-    }
-
-    private async persistPortals(base: string): Promise<void> {
-        const error = await savePortals(base, this.portals);
-        this.params.portalStatus = error
-            ? `save failed: ${error}`
-            : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        const draft = createPortal(name, { ...state.position }, state.yaw, destination);
+        try {
+            const created = await createDatabasePortal({ fromNodeId: this.params.scheme, portal: draft });
+            this.params.portalName = '';
+            this.replaceConfirmedPortals([...this.portals, created]);
+            this.markPortalSaved();
+        } catch (error) {
+            this.params.portalStatus = `save failed: ${String((error as Error)?.message ?? error)}`;
+        }
     }
 
     /**
@@ -2603,7 +2626,6 @@ class WalkDemoApp {
         for (const row of this.portalRows.splice(0)) {
             row.dispose();
         }
-        const base = this.schemes[this.params.scheme].assetBase;
         for (const portal of this.portals) {
             // Collapsed by default: deleting takes expand-then-click, so a stray
             // click on the list cannot remove the wrong portal.
@@ -2616,16 +2638,61 @@ class WalkDemoApp {
             row.addBinding(at, 'x', { readonly: true });
             row.addBinding(at, 'y', { readonly: true });
             row.addBinding(at, 'z', { readonly: true });
-            row.addBinding(portal, 'radius', { min: 0.3, max: 3, step: 0.1 }).on('change', () => {
-                if (base) void this.persistPortals(base);
+            const confirmedRadius = portal.radius;
+            const radiusBinding = row.addBinding(portal, 'radius', { min: 0.3, max: 3, step: 0.1 });
+            radiusBinding.on('change', (event) => {
+                portal.radius = confirmedRadius;
+                radiusBinding.refresh();
+                void this.persistPortalRadius(portal, event.value);
             });
             row.addButton({ title: 'Delete' }).on('click', () => {
-                this.portals = this.portals.filter((p) => p !== portal);
-                this.rebuildPortalList();
-                if (base) void this.persistPortals(base);
+                void this.deletePortal(portal);
             });
             this.portalRows.push(row);
         }
+    }
+
+    private replaceConfirmedPortals(portals: Portal[]): void {
+        this.portals = portals;
+        this.schemes[this.params.scheme].portals = portals.map((portal) => ({ ...portal }));
+        this.rebuildPortalList();
+    }
+
+    private async persistPortalRadius(portal: Portal, radius: number): Promise<void> {
+        if (!portal.id) {
+            this.params.portalStatus = 'save failed: portal has no database id';
+            return;
+        }
+        try {
+            const updated = await updateDatabasePortalRadius({ id: portal.id, fromNodeId: this.params.scheme, radius });
+            this.replaceConfirmedPortals(this.portals.map((item) => item.id === updated.id ? updated : item));
+            this.markPortalSaved();
+        } catch (error) {
+            this.params.portalStatus = `save failed: ${String((error as Error)?.message ?? error)}`;
+            this.rebuildPortalList();
+        }
+    }
+
+    private async deletePortal(portal: Portal): Promise<void> {
+        if (!portal.id) {
+            this.params.portalStatus = 'delete failed: portal has no database id';
+            return;
+        }
+        try {
+            await deleteDatabasePortal({ id: portal.id, fromNodeId: this.params.scheme });
+            this.replaceConfirmedPortals(this.portals.filter((item) => item.id !== portal.id));
+            this.markPortalSaved();
+        } catch (error) {
+            this.params.portalStatus = `delete failed: ${String((error as Error)?.message ?? error)}`;
+        }
+    }
+
+    private markPortalSaved(): void {
+        this.params.portalStatus = new Date().toLocaleTimeString([], {
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+        });
     }
 
     /**
@@ -3017,6 +3084,8 @@ class WalkDemoApp {
         if (options.scheme) {
             this.params.scheme = options.scheme;
             this.sceneBinding?.refresh();
+            this.params.portalDestination = '';
+            if (this.portalPane) this.mountPortalPanel(this.portalPane);
         }
         const scheme = this.schemes[this.params.scheme];
         const useOpeningTransition = this.firstSceneLoad && !options.skipOpeningTransition;
