@@ -156,3 +156,23 @@ generates `^/api/([^/]+)$` for this project's `api/[[...route]].ts`, so a nested
 path such as `/api/scenes/<slug>` is rejected by Vercel before Hono runs.
 `pnpm check:conventions` rejects nested handlers in mounted `server/routes/`
 modules to prevent a local-only route from shipping again.
+
+## Developer portal mutations
+
+`/api/portals` creates, resizes, and deletes directional portal rows in Neon.
+The route is disabled by default and returns `404` unless the server has
+`PORTAL_AUTHORING_ENABLED=1`. This is separate from the frontend's
+`VITE_DEV_FLAGS=portals` control; local authoring requires both.
+
+All methods use the mounted route root:
+
+| Method | Body | Result |
+|---|---|---|
+| `POST` | `fromNodeId`, `toNodeId`, `name`, `position`, `yaw`, `radius`, `spawn` | `201 { portal }` |
+| `PATCH` | `id`, `fromNodeId`, `radius` | `200 { portal }` |
+| `DELETE` | `id`, `fromNodeId` | `200 { deletedId }` |
+
+Creation rejects self-targeting portals and destinations outside the source
+place. It creates only the requested direction; a return portal must be authored
+from the destination scene. The browser copies the selected destination's
+normal Scene-selector pose into `spawn` before submitting the request.

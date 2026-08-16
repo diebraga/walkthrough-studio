@@ -79,6 +79,22 @@ default. Import reconciliation also removes a formerly generated row when an
 explicit reverse replaces it. Neon stores the resulting complete directional
 graph; the API and browser never synthesize missing reverse portals at runtime.
 
+This reciprocal completion applies only to legacy file imports. Portals created
+through `/api/portals` are written directly to Neon and remain directional. A
+developer creates the return direction separately from the destination scene.
+
+### Runtime portal authoring
+
+The developer portal panel reads destinations from the current place graph and
+excludes the active scene. A new portal uses the walker's current position and
+yaw for its trigger and copies the selected destination's presentation pose for
+arrival. Create, radius update, and delete operations go through Hono and
+Prisma; they do not rewrite `public/**/portals.json`.
+
+Set `PORTAL_AUTHORING_ENABLED=1` only in a developer server environment. The
+mutation route defaults off, while graph reads and portal traversal remain
+available normally.
+
 ## Commands
 
 ```sh

@@ -46,8 +46,9 @@ Two deliberate choices:
 Note this makes the dev code **inert in production, not absent** — the panel
 methods still ship as dead code, because class methods are not tree-shaken. To
 drop them from the bundle the panel would have to move into a dynamically
-imported module. Nothing runs, and the write endpoint does not exist server-side,
-so this is bundle weight rather than exposure.
+imported module. Nothing runs, and the server-side write route cannot mutate
+data unless its separate authoring gate is explicitly enabled, so this is
+bundle weight rather than exposure.
 
 ## General developer controls
 
@@ -78,18 +79,32 @@ additive floor circle; the landmark turns yellow while the walker is inside it.
 The `portals` flag adds a **Portals** folder for
 developer-only authoring controls while walking the scene.
 
+Database writes have a second, server-side guard. Add this to `.env.local` when
+authoring:
+
+```
+PORTAL_AUTHORING_ENABLED=1
+```
+
+Without it the controls may be visible, but mutation requests return `404` and
+Neon is unchanged.
+
 | Control | Does |
 |---|---|
 | Name | Name for the next capture; blank auto-increments `portal_1`, `portal_2` |
-| Add portal here | Captures the walker's current position and yaw |
+| Destination | Another database scene in this place; the active scene is excluded |
+| Add portal here | Captures the walker position/yaw and links to Destination |
 | saved | Time of the last successful write, or the error |
 | inside | Portal you are currently standing in |
 | *(per portal)* | Read-only x/y/z, a radius slider, and Delete |
 
-Linked portals are traversable doorways, including the importer-generated
-reciprocal return direction. Entering and leaving logs `[portal] entered <name>`
-/ `[portal] exited <name>`, edge-triggered so it fires once per transition
-rather than every frame.
+The arrival is the destination's normal Scene-selector pose. Creation is
+one-way: Hall to Balcony never creates Balcony to Hall. Switch to Balcony and
+author the Hall direction there when a return portal is wanted.
+
+Linked portals are traversable doorways. Entering and leaving logs `[portal]
+entered <name>` / `[portal] exited <name>`, edge-triggered so it fires once per
+transition rather than every frame.
 
 After a linked portal changes scenes, arrival is deliberately disarmed while
 the walker remains inside any destination portal radius. The destination marker
@@ -104,16 +119,12 @@ panel into a tiny 3D editor.
 
 ### Saving
 
-Every change writes `public/<property>/<scene>/portals.json` immediately through
-`POST /__dev/portals`, served by `tools/portal-write-plugin.ts`. That plugin is
-`apply: "serve"`, so it exists on the dev server only and is absent from a
-production build. It refuses to write outside `public/`, because the path comes
-from the page.
+Every create, radius change, and deletion is sent to `/api/portals` and written
+to Neon through Prisma. Local markers and traversal state update only after the
+API confirms the write. There is no undo; a deleted database portal must be
+authored again or restored through normal database recovery.
 
-There is no undo. `portals.json` is committed, so `git checkout` the file if you
-delete something you wanted.
-
-### Format
+### Legacy import format
 
 ```json
 {
@@ -137,13 +148,9 @@ frame, so where you arrive in the kitchen has no relationship to where the door
 is in the hall. Walk the target scene, use **Copy position** to capture that pose,
 and place it on the forward portal before running `pnpm db:import`.
 
-You do not need to author a second portal solely to make the doorway reversible.
-The importer places the generated reverse portal behind the authored forward
-destination spawn, and its return landing behind the original forward portal.
-Each offset uses the corresponding pose's yaw and clears the trigger by the
-portal radius plus `0.7` metres. If the return needs different placement,
-radius, or arrival pose, author an explicit target-to-source portal; that
-explicit reverse takes precedence over the generated default.
+The importer can still generate reciprocal entries from legacy `portals.json`
+inputs. Runtime API authoring does not run importer completion; author each
+direction explicitly from the scene where its trigger lives.
 
 ## Adding a flag
 

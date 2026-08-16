@@ -178,6 +178,11 @@ export const databasePortalMutationStore: PortalMutationStore = {
       if (source.placeId !== destination.placeId) {
         throw new PortalRequestError("portal scenes must belong to the same place", 400);
       }
+      const existing = await tx.portal.findFirst({
+        where: { fromNodeId: input.fromNodeId, name: input.name },
+        select: { id: true },
+      });
+      if (existing) throw new PortalRequestError("portal name already exists in source scene", 409);
       const portal = await tx.portal.create({
         data: {
           fromNodeId: input.fromNodeId,

@@ -1,9 +1,9 @@
 /**
  * Portals: named points inside a scene, captured while walking it.
  *
- * Linked portals are traversable doorways between scans. The importer completes
- * a forward link with a reciprocal return direction unless an explicit reverse
- * portal already exists; `to` and `spawn` describe the forward destination.
+ * Linked portals are directional traversable doorways between scans. Runtime
+ * authoring creates one direction at a time; `toNodeId` and `spawn` describe
+ * the destination.
  *
  * Runtime portals are loaded from Neon through the scene graph API. Legacy
  * portals.json files remain importer inputs rather than runtime authority.
