@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {
+    applyConfirmedPortals,
     createDatabasePortal,
     deleteDatabasePortal,
     portalDestinationOptions,
@@ -86,3 +87,17 @@ await assert.rejects(
     createDatabasePortal({ fromNodeId: 'hall-id', portal: draft }, failingFetcher),
     /authoring disabled/,
 );
+
+let resolveCreate!: (portal: typeof returnedPortal) => void;
+const deferredCreate = new Promise<typeof returnedPortal>((resolve) => {
+    resolveCreate = resolve;
+});
+let activeNodeId = 'hall-id';
+const pendingCommit = deferredCreate.then((created) => {
+    const confirmed = applyConfirmedPortals(schemes, 'hall-id', activeNodeId, [created]);
+    return confirmed;
+});
+activeNodeId = 'balcony-id';
+resolveCreate(returnedPortal);
+assert.equal(await pendingCommit, null, 'a response for a departed source scene does not replace the active list');
+assert.deepEqual(schemes['hall-id']?.portals, [returnedPortal], 'the response still updates its original source scheme');

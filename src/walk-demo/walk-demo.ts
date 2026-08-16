@@ -36,6 +36,7 @@ import type { Scene3D, Viewer } from '@manycore/aholo-viewer';
 import { CollisionDebugOverlay } from './collision-debug';
 import { PortalActivationGate } from './portal-activation';
 import {
+    applyConfirmedPortals,
     createDatabasePortal,
     deleteDatabasePortal,
     portalDestinationOptions,
@@ -2482,7 +2483,7 @@ class WalkDemoApp {
             this.thirdPersonCharacterBinding?.refresh();
             this.portalActivation.reset();
             this.params.portalDestination = '';
-            this.mountPortalPanel(pane);
+            if (this.portalPane) this.mountPortalPanel(pane);
             void this.queueReloadScene();
         });
         this.thirdPersonCharacterBinding = pane
@@ -2597,6 +2598,8 @@ class WalkDemoApp {
             return;
         }
         const state = walk.getCharacterState();
+        const sourceNodeId = this.params.scheme;
+        const sourcePortals = [...this.portals];
         const name = this.params.portalName.trim() || nextPortalName(this.portals);
         if (this.portals.some((p) => p.name === name)) {
             this.params.portalStatus = `name '${name}' already used`;
@@ -2604,12 +2607,12 @@ class WalkDemoApp {
         }
         const draft = createPortal(name, { ...state.position }, state.yaw, destination);
         try {
-            const created = await createDatabasePortal({ fromNodeId: this.params.scheme, portal: draft });
-            this.params.portalName = '';
-            this.replaceConfirmedPortals([...this.portals, created]);
-            this.markPortalSaved();
+            const created = await createDatabasePortal({ fromNodeId: sourceNodeId, portal: draft });
+            if (this.params.scheme === sourceNodeId) this.params.portalName = '';
+            this.replaceConfirmedPortals(sourceNodeId, [...sourcePortals, created]);
+            this.markPortalSaved(sourceNodeId);
         } catch (error) {
-            this.params.portalStatus = `save failed: ${String((error as Error)?.message ?? error)}`;
+            this.markPortalError(sourceNodeId, 'save', error);
         }
     }
 
@@ -2643,56 +2646,71 @@ class WalkDemoApp {
             radiusBinding.on('change', (event) => {
                 portal.radius = confirmedRadius;
                 radiusBinding.refresh();
-                void this.persistPortalRadius(portal, event.value);
+                void this.persistPortalRadius(portal, event.value, this.params.scheme, [...this.portals]);
             });
             row.addButton({ title: 'Delete' }).on('click', () => {
-                void this.deletePortal(portal);
+                void this.deletePortal(portal, this.params.scheme, [...this.portals]);
             });
             this.portalRows.push(row);
         }
     }
 
-    private replaceConfirmedPortals(portals: Portal[]): void {
-        this.portals = portals;
-        this.schemes[this.params.scheme].portals = portals.map((portal) => ({ ...portal }));
+    private replaceConfirmedPortals(sourceNodeId: string, portals: Portal[]): void {
+        const activePortals = applyConfirmedPortals(this.schemes, sourceNodeId, this.params.scheme, portals);
+        if (!activePortals) return;
+        this.portals = activePortals;
         this.rebuildPortalList();
     }
 
-    private async persistPortalRadius(portal: Portal, radius: number): Promise<void> {
+    private async persistPortalRadius(
+        portal: Portal,
+        radius: number,
+        sourceNodeId: string,
+        sourcePortals: Portal[],
+    ): Promise<void> {
         if (!portal.id) {
             this.params.portalStatus = 'save failed: portal has no database id';
             return;
         }
         try {
-            const updated = await updateDatabasePortalRadius({ id: portal.id, fromNodeId: this.params.scheme, radius });
-            this.replaceConfirmedPortals(this.portals.map((item) => item.id === updated.id ? updated : item));
-            this.markPortalSaved();
+            const updated = await updateDatabasePortalRadius({ id: portal.id, fromNodeId: sourceNodeId, radius });
+            this.replaceConfirmedPortals(
+                sourceNodeId,
+                sourcePortals.map((item) => item.id === updated.id ? updated : item),
+            );
+            this.markPortalSaved(sourceNodeId);
         } catch (error) {
-            this.params.portalStatus = `save failed: ${String((error as Error)?.message ?? error)}`;
-            this.rebuildPortalList();
+            this.markPortalError(sourceNodeId, 'save', error);
+            if (this.params.scheme === sourceNodeId) this.rebuildPortalList();
         }
     }
 
-    private async deletePortal(portal: Portal): Promise<void> {
+    private async deletePortal(portal: Portal, sourceNodeId: string, sourcePortals: Portal[]): Promise<void> {
         if (!portal.id) {
             this.params.portalStatus = 'delete failed: portal has no database id';
             return;
         }
         try {
-            await deleteDatabasePortal({ id: portal.id, fromNodeId: this.params.scheme });
-            this.replaceConfirmedPortals(this.portals.filter((item) => item.id !== portal.id));
-            this.markPortalSaved();
+            await deleteDatabasePortal({ id: portal.id, fromNodeId: sourceNodeId });
+            this.replaceConfirmedPortals(sourceNodeId, sourcePortals.filter((item) => item.id !== portal.id));
+            this.markPortalSaved(sourceNodeId);
         } catch (error) {
-            this.params.portalStatus = `delete failed: ${String((error as Error)?.message ?? error)}`;
+            this.markPortalError(sourceNodeId, 'delete', error);
         }
     }
 
-    private markPortalSaved(): void {
+    private markPortalSaved(sourceNodeId: string): void {
+        if (this.params.scheme !== sourceNodeId) return;
         this.params.portalStatus = new Date().toLocaleTimeString([], {
             hour: '2-digit',
             minute: '2-digit',
             second: '2-digit',
         });
+    }
+
+    private markPortalError(sourceNodeId: string, action: 'save' | 'delete', error: unknown): void {
+        if (this.params.scheme !== sourceNodeId) return;
+        this.params.portalStatus = `${action} failed: ${String((error as Error)?.message ?? error)}`;
     }
 
     /**

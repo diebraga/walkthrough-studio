@@ -12,6 +12,18 @@ export function portalDestinationOptions(
     );
 }
 
+export function applyConfirmedPortals(
+    schemes: Record<string, WalkDemoScheme>,
+    sourceNodeId: string,
+    activeNodeId: string,
+    portals: Portal[],
+): Portal[] | null {
+    const source = schemes[sourceNodeId];
+    if (!source) return null;
+    source.portals = portals.map((portal) => ({ ...portal }));
+    return sourceNodeId === activeNodeId ? portals : null;
+}
+
 interface PortalResponse {
     portal?: Omit<Portal, 'to'>;
     error?: string;

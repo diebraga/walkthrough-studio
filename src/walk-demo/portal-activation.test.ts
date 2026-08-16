@@ -45,7 +45,7 @@ const sceneSelectionStart = source.indexOf("this.sceneBinding = pane.addBinding(
 const sceneSelectionEnd = source.indexOf(".addBinding(this.params, 'thirdPersonCharacter'", sceneSelectionStart);
 const sceneSelection = source.slice(sceneSelectionStart, sceneSelectionEnd);
 assert.match(sceneSelection, /this\.portalActivation\.reset\(\);[\s\S]*?void this\.queueReloadScene\(\);/);
-assert.match(sceneSelection, /this\.params\.portalDestination = '';\s+this\.mountPortalPanel\(pane\);/);
+assert.match(sceneSelection, /this\.params\.portalDestination = '';\s+if \(this\.portalPane\) this\.mountPortalPanel\(pane\);/);
 assert.match(
     sceneSelection,
     /this\.sceneBinding = pane\.addBinding\(this\.params, 'scheme', \{[\s\S]*?\}\)\.on\('change'/,
@@ -72,8 +72,10 @@ assert.ok(!source.slice(reloadStart, reloadEnd).includes('this.portalActivation.
 assert.ok(source.includes("portalDestinationOptions(this.schemes, this.params.scheme)"));
 assert.ok(source.includes("folder.addBinding(this.params, 'portalDestination'"));
 assert.ok(source.includes("this.params.portalStatus = 'choose a destination';"));
-assert.ok(source.includes('const created = await createDatabasePortal({ fromNodeId: this.params.scheme, portal: draft });'));
-assert.ok(source.includes('this.replaceConfirmedPortals([...this.portals, created]);'));
-assert.ok(source.includes('await deleteDatabasePortal({ id: portal.id, fromNodeId: this.params.scheme });'));
+assert.ok(source.includes('const created = await createDatabasePortal({ fromNodeId: sourceNodeId, portal: draft });'));
+assert.ok(source.includes('this.replaceConfirmedPortals(sourceNodeId, [...sourcePortals, created]);'));
+assert.ok(source.includes('await deleteDatabasePortal({ id: portal.id, fromNodeId: sourceNodeId });'));
+assert.ok(source.includes('this.markPortalSaved(sourceNodeId);'));
+assert.ok(source.includes('if (this.params.scheme !== sourceNodeId) return;'));
 assert.ok(!source.includes('savePortals'));
 assert.ok(!source.includes('/__dev/portals'));

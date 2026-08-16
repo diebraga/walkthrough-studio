@@ -17,3 +17,17 @@ for (const snippet of [rendererConstruction[0], rendererUpdate[0]]) {
 }
 
 assert.doesNotMatch(source, /showPortals/, 'the developer panel must not own portal visibility');
+
+const sceneSelectionStart = source.indexOf("this.sceneBinding = pane.addBinding(this.params, 'scheme'");
+const sceneSelectionEnd = source.indexOf(".addBinding(this.params, 'thirdPersonCharacter'", sceneSelectionStart);
+const sceneSelection = source.slice(sceneSelectionStart, sceneSelectionEnd);
+assert.match(
+    sceneSelection,
+    /if \(this\.portalPane\) this\.mountPortalPanel\(pane\);/,
+    'scene changes only remount portal authoring when the developer-gated panel already exists',
+);
+assert.doesNotMatch(
+    sceneSelection,
+    /this\.params\.portalDestination = '';\s+this\.mountPortalPanel\(pane\);/,
+    'scene changes must not expose portal authoring when the portals flag is off',
+);

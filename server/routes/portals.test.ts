@@ -1,4 +1,5 @@
 import { strict as assert } from "node:assert";
+import { readFileSync } from "node:fs";
 import type {
   CreatePortalInput,
   PortalMutationStore,
@@ -106,3 +107,10 @@ const malformedResponse = await enabled.request("/", {
   body: "{",
 });
 assert.equal(malformedResponse.status, 400);
+
+const migration = readFileSync(
+  new URL("../../prisma/migrations/20260816183000_unique_portal_name_per_scene/migration.sql", import.meta.url),
+  "utf8",
+);
+assert.match(migration, /CREATE UNIQUE INDEX "Portal_runtime_fromNodeId_name_key"/);
+assert.match(migration, /WHERE "sourceKey" LIKE 'runtime:%'/);
