@@ -36,7 +36,9 @@ import type { Scene3D, Viewer } from '@manycore/aholo-viewer';
 import { CollisionDebugOverlay } from './collision-debug';
 import { PortalActivationGate } from './portal-activation';
 import {
-    applyConfirmedPortals,
+    commitCreatedPortal,
+    commitDeletedPortal,
+    commitUpdatedPortal,
     createDatabasePortal,
     deleteDatabasePortal,
     portalDestinationOptions,
@@ -2599,7 +2601,6 @@ class WalkDemoApp {
         }
         const state = walk.getCharacterState();
         const sourceNodeId = this.params.scheme;
-        const sourcePortals = [...this.portals];
         const name = this.params.portalName.trim() || nextPortalName(this.portals);
         if (this.portals.some((p) => p.name === name)) {
             this.params.portalStatus = `name '${name}' already used`;
@@ -2609,7 +2610,12 @@ class WalkDemoApp {
         try {
             const created = await createDatabasePortal({ fromNodeId: sourceNodeId, portal: draft });
             if (this.params.scheme === sourceNodeId) this.params.portalName = '';
-            this.replaceConfirmedPortals(sourceNodeId, [...sourcePortals, created]);
+            this.showConfirmedPortals(commitCreatedPortal(
+                this.schemes,
+                sourceNodeId,
+                this.params.scheme,
+                created,
+            ));
             this.markPortalSaved(sourceNodeId);
         } catch (error) {
             this.markPortalError(sourceNodeId, 'save', error);
@@ -2646,17 +2652,16 @@ class WalkDemoApp {
             radiusBinding.on('change', (event) => {
                 portal.radius = confirmedRadius;
                 radiusBinding.refresh();
-                void this.persistPortalRadius(portal, event.value, this.params.scheme, [...this.portals]);
+                void this.persistPortalRadius(portal, event.value, this.params.scheme);
             });
             row.addButton({ title: 'Delete' }).on('click', () => {
-                void this.deletePortal(portal, this.params.scheme, [...this.portals]);
+                void this.deletePortal(portal, this.params.scheme);
             });
             this.portalRows.push(row);
         }
     }
 
-    private replaceConfirmedPortals(sourceNodeId: string, portals: Portal[]): void {
-        const activePortals = applyConfirmedPortals(this.schemes, sourceNodeId, this.params.scheme, portals);
+    private showConfirmedPortals(activePortals: Portal[] | null): void {
         if (!activePortals) return;
         this.portals = activePortals;
         this.rebuildPortalList();
@@ -2666,7 +2671,6 @@ class WalkDemoApp {
         portal: Portal,
         radius: number,
         sourceNodeId: string,
-        sourcePortals: Portal[],
     ): Promise<void> {
         if (!portal.id) {
             this.params.portalStatus = 'save failed: portal has no database id';
@@ -2674,10 +2678,12 @@ class WalkDemoApp {
         }
         try {
             const updated = await updateDatabasePortalRadius({ id: portal.id, fromNodeId: sourceNodeId, radius });
-            this.replaceConfirmedPortals(
+            this.showConfirmedPortals(commitUpdatedPortal(
+                this.schemes,
                 sourceNodeId,
-                sourcePortals.map((item) => item.id === updated.id ? updated : item),
-            );
+                this.params.scheme,
+                updated,
+            ));
             this.markPortalSaved(sourceNodeId);
         } catch (error) {
             this.markPortalError(sourceNodeId, 'save', error);
@@ -2685,14 +2691,19 @@ class WalkDemoApp {
         }
     }
 
-    private async deletePortal(portal: Portal, sourceNodeId: string, sourcePortals: Portal[]): Promise<void> {
+    private async deletePortal(portal: Portal, sourceNodeId: string): Promise<void> {
         if (!portal.id) {
             this.params.portalStatus = 'delete failed: portal has no database id';
             return;
         }
         try {
             await deleteDatabasePortal({ id: portal.id, fromNodeId: sourceNodeId });
-            this.replaceConfirmedPortals(sourceNodeId, sourcePortals.filter((item) => item.id !== portal.id));
+            this.showConfirmedPortals(commitDeletedPortal(
+                this.schemes,
+                sourceNodeId,
+                this.params.scheme,
+                portal.id,
+            ));
             this.markPortalSaved(sourceNodeId);
         } catch (error) {
             this.markPortalError(sourceNodeId, 'delete', error);

@@ -73,7 +73,9 @@ assert.ok(source.includes("portalDestinationOptions(this.schemes, this.params.sc
 assert.ok(source.includes("folder.addBinding(this.params, 'portalDestination'"));
 assert.ok(source.includes("this.params.portalStatus = 'choose a destination';"));
 assert.ok(source.includes('const created = await createDatabasePortal({ fromNodeId: sourceNodeId, portal: draft });'));
-assert.ok(source.includes('this.replaceConfirmedPortals(sourceNodeId, [...sourcePortals, created]);'));
+assert.ok(source.includes('this.showConfirmedPortals(commitCreatedPortal('));
+assert.ok(source.includes('this.showConfirmedPortals(commitUpdatedPortal('));
+assert.ok(source.includes('this.showConfirmedPortals(commitDeletedPortal('));
 assert.ok(source.includes('await deleteDatabasePortal({ id: portal.id, fromNodeId: sourceNodeId });'));
 assert.ok(source.includes('this.markPortalSaved(sourceNodeId);'));
 assert.ok(source.includes('if (this.params.scheme !== sourceNodeId) return;'));

@@ -12,16 +12,57 @@ export function portalDestinationOptions(
     );
 }
 
-export function applyConfirmedPortals(
+function commitPortalMutation(
     schemes: Record<string, WalkDemoScheme>,
     sourceNodeId: string,
     activeNodeId: string,
-    portals: Portal[],
+    mutate: (portals: Portal[]) => Portal[],
 ): Portal[] | null {
     const source = schemes[sourceNodeId];
     if (!source) return null;
+    const portals = mutate(source.portals ? [...source.portals] : []);
     source.portals = portals.map((portal) => ({ ...portal }));
     return sourceNodeId === activeNodeId ? portals : null;
+}
+
+export function commitCreatedPortal(
+    schemes: Record<string, WalkDemoScheme>,
+    sourceNodeId: string,
+    activeNodeId: string,
+    created: Portal,
+): Portal[] | null {
+    return commitPortalMutation(schemes, sourceNodeId, activeNodeId, (portals) => [
+        ...portals.filter((portal) => portal.id !== created.id),
+        created,
+    ]);
+}
+
+export function commitUpdatedPortal(
+    schemes: Record<string, WalkDemoScheme>,
+    sourceNodeId: string,
+    activeNodeId: string,
+    updated: Portal,
+): Portal[] | null {
+    return commitPortalMutation(
+        schemes,
+        sourceNodeId,
+        activeNodeId,
+        (portals) => portals.map((portal) => portal.id === updated.id ? updated : portal),
+    );
+}
+
+export function commitDeletedPortal(
+    schemes: Record<string, WalkDemoScheme>,
+    sourceNodeId: string,
+    activeNodeId: string,
+    deletedId: string,
+): Portal[] | null {
+    return commitPortalMutation(
+        schemes,
+        sourceNodeId,
+        activeNodeId,
+        (portals) => portals.filter((portal) => portal.id !== deletedId),
+    );
 }
 
 interface PortalResponse {

@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import {
-    applyConfirmedPortals,
+    commitCreatedPortal,
+    commitDeletedPortal,
+    commitUpdatedPortal,
     createDatabasePortal,
     deleteDatabasePortal,
     portalDestinationOptions,
@@ -94,10 +96,26 @@ const deferredCreate = new Promise<typeof returnedPortal>((resolve) => {
 });
 let activeNodeId = 'hall-id';
 const pendingCommit = deferredCreate.then((created) => {
-    const confirmed = applyConfirmedPortals(schemes, 'hall-id', activeNodeId, [created]);
+    const confirmed = commitCreatedPortal(schemes, 'hall-id', activeNodeId, created);
     return confirmed;
 });
 activeNodeId = 'balcony-id';
 resolveCreate(returnedPortal);
 assert.equal(await pendingCommit, null, 'a response for a departed source scene does not replace the active list');
 assert.deepEqual(schemes['hall-id']?.portals, [returnedPortal], 'the response still updates its original source scheme');
+
+schemes['hall-id']!.portals = [];
+const first = { ...returnedPortal, id: 'portal-1', name: 'first' };
+const second = { ...returnedPortal, id: 'portal-2', name: 'second' };
+commitCreatedPortal(schemes, 'hall-id', 'hall-id', second);
+assert.deepEqual(
+    commitCreatedPortal(schemes, 'hall-id', 'hall-id', first)?.map((portal) => portal.id),
+    ['portal-2', 'portal-1'],
+    'overlapping creates merge into the latest confirmed source list regardless of response order',
+);
+const resized = { ...first, radius: 1.4 };
+assert.equal(commitUpdatedPortal(schemes, 'hall-id', 'hall-id', resized)?.find((portal) => portal.id === first.id)?.radius, 1.4);
+assert.deepEqual(
+    commitDeletedPortal(schemes, 'hall-id', 'hall-id', second.id!)?.map((portal) => portal.id),
+    ['portal-1'],
+);
