@@ -6,6 +6,7 @@ import {
     createDatabasePortal,
     deleteDatabasePortal,
     portalDestinationOptions,
+    PortalMutationQueue,
     updateDatabasePortalRadius,
 } from './portal-authoring';
 import { createPortal } from './portals';
@@ -119,3 +120,21 @@ assert.deepEqual(
     commitDeletedPortal(schemes, 'hall-id', 'hall-id', second.id!)?.map((portal) => portal.id),
     ['portal-1'],
 );
+
+const queue = new PortalMutationQueue();
+const starts: string[] = [];
+let releaseFirst!: () => void;
+const firstWrite = queue.enqueue('portal-1', async () => {
+    starts.push('first');
+    await new Promise<void>((resolve) => {
+        releaseFirst = resolve;
+    });
+});
+const secondWrite = queue.enqueue('portal-1', async () => {
+    starts.push('second');
+});
+await new Promise<void>((resolve) => setImmediate(resolve));
+assert.deepEqual(starts, ['first'], 'a second write for one portal waits for the first response');
+releaseFirst();
+await Promise.all([firstWrite, secondWrite]);
+assert.deepEqual(starts, ['first', 'second'], 'same-portal writes execute in request order');

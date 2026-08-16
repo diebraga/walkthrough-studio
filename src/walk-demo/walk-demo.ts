@@ -42,6 +42,7 @@ import {
     createDatabasePortal,
     deleteDatabasePortal,
     portalDestinationOptions,
+    PortalMutationQueue,
     updateDatabasePortalRadius,
 } from './portal-authoring';
 import { PortalRenderer } from './portal-renderer';
@@ -2399,6 +2400,7 @@ class WalkDemoApp {
     private collisionDebug: CollisionDebugOverlay | undefined;
     private portalRenderer: PortalRenderer | undefined;
     private readonly portalActivation = new PortalActivationGate();
+    private readonly portalMutationQueue = new PortalMutationQueue();
     private scene: WalkDemoScene | undefined;
     private walk: ViewerWalkMode | undefined;
     private running = false;
@@ -2650,9 +2652,12 @@ class WalkDemoApp {
             const confirmedRadius = portal.radius;
             const radiusBinding = row.addBinding(portal, 'radius', { min: 0.3, max: 3, step: 0.1 });
             radiusBinding.on('change', (event) => {
+                if (!event.last) return;
                 portal.radius = confirmedRadius;
                 radiusBinding.refresh();
-                void this.persistPortalRadius(portal, event.value, this.params.scheme);
+                const sourceNodeId = this.params.scheme;
+                void this.portalMutationQueue.enqueue(portal.id ?? portal.name, () =>
+                    this.persistPortalRadius(portal, event.value, sourceNodeId));
             });
             row.addButton({ title: 'Delete' }).on('click', () => {
                 void this.deletePortal(portal, this.params.scheme);

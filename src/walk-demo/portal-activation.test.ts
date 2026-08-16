@@ -76,6 +76,8 @@ assert.ok(source.includes('const created = await createDatabasePortal({ fromNode
 assert.ok(source.includes('this.showConfirmedPortals(commitCreatedPortal('));
 assert.ok(source.includes('this.showConfirmedPortals(commitUpdatedPortal('));
 assert.ok(source.includes('this.showConfirmedPortals(commitDeletedPortal('));
+assert.ok(source.includes('if (!event.last) return;'));
+assert.ok(source.includes("this.portalMutationQueue.enqueue(portal.id ?? portal.name"));
 assert.ok(source.includes('await deleteDatabasePortal({ id: portal.id, fromNodeId: sourceNodeId });'));
 assert.ok(source.includes('this.markPortalSaved(sourceNodeId);'));
 assert.ok(source.includes('if (this.params.scheme !== sourceNodeId) return;'));
