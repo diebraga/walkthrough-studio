@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { health } from "./routes/health.js";
+import { portals } from "./routes/portals.js";
 import { scenes } from "./routes/scenes.js";
 
 /**
@@ -14,4 +15,5 @@ import { scenes } from "./routes/scenes.js";
 export const app = new Hono().basePath("/api");
 
 app.route("/health", health);
+app.route("/portals", portals);
 app.route("/scenes", scenes);

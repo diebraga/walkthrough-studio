@@ -15,7 +15,7 @@
     "db:validate": "prisma validate",
     "dev": "vite",
     "test:conventions": "node --test tools/check-project-conventions.test.mjs",
-    "test:database": "node --import tsx server/db.test.ts && node --import tsx --test tools/scene-import/*.test.ts && node --import tsx server/routes/scenes.test.ts",
+    "test:database": "node --import tsx server/db.test.ts && node --import tsx --test tools/scene-import/*.test.ts && node --import tsx server/routes/scenes.test.ts && node --import tsx server/routes/portals.test.ts",
     "preview": "vite preview"
   },
   "dependencies": {
