@@ -28,7 +28,26 @@ export interface Portal {
     spawn: { x: number; y: number; z: number; yaw: number; pitch?: number } | null;
 }
 
-const DEFAULT_RADIUS = 0.8;
+export const DEFAULT_RADIUS = 0.8;
+
+/**
+ * Push a captured position forward along facing `yaw` so a newly authored
+ * portal doesn't enclose the player who just placed it — otherwise the very
+ * next trigger check finds them already standing inside it and teleports
+ * them immediately. `distance` should clear the portal's own radius plus the
+ * player's body.
+ */
+export function offsetForward(
+    position: { x: number; y: number; z: number },
+    yaw: number,
+    distance: number,
+): { x: number; y: number; z: number } {
+    return {
+        x: position.x - Math.sin(yaw) * distance,
+        y: position.y,
+        z: position.z - Math.cos(yaw) * distance,
+    };
+}
 
 /** `portal_1`, `portal_2`, ... skipping names already taken. */
 export function nextPortalName(portals: readonly Portal[]): string {

@@ -81,6 +81,32 @@ export class GridCollision {
         return { nx: this.nx, nz: this.nz, cell: this.cell };
     }
 
+    /**
+     * Centroid of all walkable cells — a "middle of the room" point that is
+     * usable for placing a spawn, unlike the raw grid bounding-box center
+     * (walkableAreaM2 is often a small fraction of that box, so its center
+     * can land in a wall or a void outside the scan).
+     *
+     * ponytail: centroid, not guaranteed walkable itself in a concave or
+     * doughnut-shaped room. Upgrade: snap to the nearest walkable cell if a
+     * real floor plan ever needs it.
+     */
+    walkableCenter(): { x: number; z: number } {
+        let sumX = 0;
+        let sumZ = 0;
+        let count = 0;
+        for (let gz = 0; gz < this.nz; gz++) {
+            for (let gx = 0; gx < this.nx; gx++) {
+                if (!this.isWalkableCell(gx, gz)) continue;
+                const bounds = this.cellBounds(gx, gz);
+                sumX += (bounds.x0 + bounds.x1) / 2;
+                sumZ += (bounds.z0 + bounds.z1) / 2;
+                count++;
+            }
+        }
+        return count > 0 ? { x: sumX / count, z: sumZ / count } : { x: this.minX, z: this.minZ };
+    }
+
     /** Nearest hit against the floor plane and the wall cells. */
     queryRay(...args: number[]): { x: number; y: number; z: number } | null {
         const [ox, oy, oz, dx, dy, dz, maxDistance] = args as [

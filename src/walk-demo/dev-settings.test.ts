@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 
 const source = readFileSync(new URL('./walk-demo.ts', import.meta.url), 'utf8');
 const rendererConstruction = source.match(/this\.portalRenderer = new PortalRenderer\(this\.ctx\.renderer\.scene\);/);
-const rendererUpdate = source.match(/this\.portalRenderer\?\.update\(this\.portals, this\.insidePortalName, floorY\);/);
+const rendererUpdate = source.match(/this\.portalRenderer\?\.update\(this\.portals, floorY\);/);
 const portalDevGateStart = source.indexOf("if (devEnabled('portals'))");
 const portalDevGateEnd = source.indexOf('}', portalDevGateStart) + 1;
 

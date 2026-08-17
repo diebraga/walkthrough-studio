@@ -55,12 +55,13 @@ import {
 } from '../anneal';
 import {
     createPortal,
+    DEFAULT_RADIUS,
     nextPortalName,
+    offsetForward,
     portalAt,
     type Portal,
 } from './portals';
 import { resolvePortalTeleport, type TeleportPose } from './teleport';
-import { loadLastPose, saveLastPose } from './saved-pose';
 import { flyVector } from './fly-mode';
 import { mobileJoystickInput } from './mobile-joystick';
 import { clampPitch, nextLookAngles } from './walk-look';
@@ -2416,18 +2417,9 @@ class WalkDemoApp {
     private teleporting = false;
     private firstSceneLoad = true;
 
-    /** Remember where you were, so a reload lands you back instead of at spawn. */
-    private savePoseOnUnload = (): void => {
-        const walk = this.walk;
-        if (!walk) return;
-        const pose = walk.getPose();
-        saveLastPose(this.params.scheme, { px: pose.x, py: pose.y, pz: pose.z, yaw: pose.yaw, pitch: pose.pitch });
-    };
-
     constructor(ctx: RenderRuntime, catalog: SceneCatalog) {
         this.ctx = ctx;
         this.schemes = createWalkDemoSchemes(catalog);
-        window.addEventListener('pagehide', this.savePoseOnUnload);
         this.params = {
             scheme: catalog.initialNodeId,
             viewMode: 'third',
@@ -2608,7 +2600,19 @@ class WalkDemoApp {
             this.params.portalStatus = `name '${name}' already used`;
             return;
         }
-        const draft = createPortal(name, { ...state.position }, state.yaw, destination);
+        // Place ahead of the player, not underfoot, so creating the portal
+        // can't immediately trigger it (see offsetForward).
+        const position = offsetForward(state.position, state.yaw, DEFAULT_RADIUS + 1);
+        // Arrive at the destination's walkable center rather than its fixed
+        // authored pose: two portals both landing near a scene's one default
+        // point is what turns a hall<->balcony pair into a teleport loop.
+        const center = destination.collisionData
+            ? new GridCollision(destination.collisionData).walkableCenter()
+            : null;
+        const arrivalPose = center && destination.collisionData
+            ? { ...destination.pose, px: center.x, py: destination.collisionData.floorY, pz: center.z }
+            : destination.pose;
+        const draft = createPortal(name, position, state.yaw, { id: destination.id, pose: arrivalPose });
         try {
             const created = await createDatabasePortal({ fromNodeId: sourceNodeId, portal: draft });
             if (this.params.scheme === sourceNodeId) this.params.portalName = '';
@@ -2754,7 +2758,7 @@ class WalkDemoApp {
         }
         const floorY = walk.collisionGrid?.floorY;
         if (floorY !== undefined) {
-            this.portalRenderer?.update(this.portals, this.insidePortalName, floorY);
+            this.portalRenderer?.update(this.portals, floorY);
         }
     }
 
@@ -3195,7 +3199,7 @@ class WalkDemoApp {
             if (generation !== this.reloadGeneration) {
                 return;
             }
-            const p = options.pose ?? loadLastPose(this.params.scheme) ?? scheme.pose;
+            const p = options.pose ?? scheme.pose;
             if (!options.pose) {
                 walk.startAtPose(new Vector3(p.px, p.py, p.pz), p.yaw, p.pitch);
             }
@@ -3320,7 +3324,6 @@ class WalkDemoApp {
 
     /** Stop walk mode and restore the original runtime camera. */
     dispose(): void {
-        window.removeEventListener('pagehide', this.savePoseOnUnload);
         this.reloadAbort?.abort();
         this.reloadAbort = undefined;
         this.reloadGeneration += 1;

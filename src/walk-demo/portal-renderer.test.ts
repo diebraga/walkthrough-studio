@@ -42,12 +42,15 @@ const {
     PORTAL_VISUAL,
     PortalRenderer,
     buildPortalMarker,
+    buildPortalJet,
 } = portalRendererModule;
 
 assert.deepEqual(PORTAL_VISUAL, {
     glowRadius: 1.7,
-    floorOffset: 0.12,
+    floorOffset: 1.2,
     renderOrder: 10_000,
+    jetRadius: 0.15,
+    jetHeight: 1.6,
 });
 
 const marker = buildPortalMarker(PORTAL_VISUAL.glowRadius, 0x33bbff);
@@ -65,6 +68,27 @@ assert.equal(Number(radialExtent.toFixed(12)), PORTAL_VISUAL.glowRadius);
 assert.equal(minY, 0);
 assert.equal(maxY, 0);
 assert.equal(positions.length / 9, 24);
+
+// The jet: two cones sharing an apex at the origin, tapering out to a thin
+// ring at y = +-height — a point at the center, not a hard flat cap.
+const jet = buildPortalJet(PORTAL_VISUAL.jetRadius, PORTAL_VISUAL.jetHeight, 0x33bbff);
+let jetRadialExtent = 0;
+let apexCount = 0;
+const jetYs = new Set<number>();
+for (let index = 0; index < jet.positions.length; index += 3) {
+    const [x, y, z] = [jet.positions[index]!, jet.positions[index + 1]!, jet.positions[index + 2]!];
+    jetYs.add(Number(y.toFixed(6)));
+    if (x === 0 && y === 0 && z === 0) {
+        apexCount++;
+    } else {
+        jetRadialExtent = Math.max(jetRadialExtent, Math.hypot(x, z));
+        assert.equal(Math.abs(y), PORTAL_VISUAL.jetHeight, 'ring vertices sit at the cone tips, not partway up');
+    }
+}
+assert.deepEqual([...jetYs].sort((a, b) => a - b), [-PORTAL_VISUAL.jetHeight, 0, PORTAL_VISUAL.jetHeight]);
+assert.equal(Number(jetRadialExtent.toFixed(12)), PORTAL_VISUAL.jetRadius);
+assert.equal(apexCount, 24 * 2, 'one shared apex vertex per triangle, both cones');
+assert.equal(jet.positions.length / 9, 24 * 2);
 
 assert.deepEqual(PORTAL_MATERIAL_OPTIONS, {
     enableVertexColor: true,
@@ -149,45 +173,46 @@ function assertMaterialContract(mesh: PortalMesh): void {
 }
 
 const renderer = new PortalRenderer(fakeScene);
-renderer.update(portals, 'quartz', -1.75);
+renderer.update(portals, -1.75);
 assert.equal(addedMeshes.length, 2);
 
-const [normalMesh, activeMesh] = addedMeshes;
-assert.ok(normalMesh);
-assert.ok(activeMesh);
+const [emberMesh, quartzMesh] = addedMeshes;
+assert.ok(emberMesh);
+assert.ok(quartzMesh);
 assert.deepEqual(
-    { x: normalMesh.position.x, y: normalMesh.position.y, z: normalMesh.position.z },
+    { x: emberMesh.position.x, y: emberMesh.position.y, z: emberMesh.position.z },
     { x: 2.5, y: -1.75 + PORTAL_VISUAL.floorOffset, z: -4.25 },
 );
 assert.deepEqual(
-    { x: activeMesh.position.x, y: activeMesh.position.y, z: activeMesh.position.z },
+    { x: quartzMesh.position.x, y: quartzMesh.position.y, z: quartzMesh.position.z },
     { x: -7, y: -1.75 + PORTAL_VISUAL.floorOffset, z: 8.5 },
 );
-assert.equal(normalMesh.renderOrder, PORTAL_VISUAL.renderOrder);
-assert.equal(activeMesh.renderOrder, PORTAL_VISUAL.renderOrder);
-assert.equal(normalMesh.visible, true);
-assert.equal(activeMesh.visible, true);
-assertMaterialContract(normalMesh);
-assertMaterialContract(activeMesh);
-assertMarkerColors(normalMesh, 0x33bbff);
-assertMarkerColors(activeMesh, 0xffd400);
+assert.equal(emberMesh.renderOrder, PORTAL_VISUAL.renderOrder);
+assert.equal(quartzMesh.renderOrder, PORTAL_VISUAL.renderOrder);
+assert.equal(emberMesh.visible, true);
+assert.equal(quartzMesh.visible, true);
+assertMaterialContract(emberMesh);
+assertMaterialContract(quartzMesh);
+// Walking into a portal must not recolor it — same glow whether entered or not.
+assertMarkerColors(emberMesh, 0x33bbff);
+assertMarkerColors(quartzMesh, 0x33bbff);
 
-renderer.update(portals, 'quartz', -1.75);
+renderer.update(portals, -1.75);
 assert.equal(addedMeshes.length, 2, 'an unchanged update keeps existing meshes');
-assert.deepEqual(resourceCalls.get(normalMesh), { removeFromParent: 0, freeAllGpuResourceOwned: 0 });
-assert.deepEqual(resourceCalls.get(activeMesh), { removeFromParent: 0, freeAllGpuResourceOwned: 0 });
+assert.deepEqual(resourceCalls.get(emberMesh), { removeFromParent: 0, freeAllGpuResourceOwned: 0 });
+assert.deepEqual(resourceCalls.get(quartzMesh), { removeFromParent: 0, freeAllGpuResourceOwned: 0 });
 
 renderer.setVisible(false);
-assert.equal(normalMesh.visible, false);
-assert.equal(activeMesh.visible, false);
+assert.equal(emberMesh.visible, false);
+assert.equal(quartzMesh.visible, false);
 
-renderer.update(portals, 'ember', -1.75);
+renderer.update(portals, -2.0);
 assert.equal(addedMeshes.length, 4, 'a changed update replaces every portal mesh');
-assert.deepEqual(resourceCalls.get(normalMesh), { removeFromParent: 1, freeAllGpuResourceOwned: 1 });
-assert.deepEqual(resourceCalls.get(activeMesh), { removeFromParent: 1, freeAllGpuResourceOwned: 1 });
+assert.deepEqual(resourceCalls.get(emberMesh), { removeFromParent: 1, freeAllGpuResourceOwned: 1 });
+assert.deepEqual(resourceCalls.get(quartzMesh), { removeFromParent: 1, freeAllGpuResourceOwned: 1 });
 const replacementMeshes = addedMeshes.slice(2);
 assert.ok(replacementMeshes.every((mesh) => mesh.visible === false));
-assertMarkerColors(replacementMeshes[0]!, 0xffd400);
+assertMarkerColors(replacementMeshes[0]!, 0x33bbff);
 assertMarkerColors(replacementMeshes[1]!, 0x33bbff);
 
 renderer.setVisible(true);
@@ -197,7 +222,7 @@ for (const mesh of replacementMeshes) {
     assert.deepEqual(resourceCalls.get(mesh), { removeFromParent: 1, freeAllGpuResourceOwned: 1 });
 }
 
-renderer.update(portals, 'ember', -1.75);
+renderer.update(portals, -2.0);
 assert.equal(addedMeshes.length, 6, 'dispose clears the update key so the same state can be rebuilt');
 renderer.dispose();
 for (const mesh of addedMeshes.slice(4)) {
