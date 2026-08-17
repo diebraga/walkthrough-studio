@@ -10,35 +10,33 @@ const base: Portal = {
     radius: 0.8,
     toNodeId: null,
     to: null,
-    spawn: null,
 };
 
-assert.equal(resolvePortalTeleport(base, new Set(["node-balcony"])), null);
+const balconyPose = { px: 9.14, py: 0.17, pz: 3.09, yaw: 0, pitch: 0 };
+const schemes = { "node-balcony": { pose: balconyPose } };
+
+assert.equal(resolvePortalTeleport(base, schemes), null, "a portal with no destination never resolves");
 
 assert.deepEqual(
-    resolvePortalTeleport(
-        {
-            ...base,
-            toNodeId: "node-balcony",
-            spawn: { x: 1, y: 2, z: 3, yaw: 4, pitch: 5 },
-        },
-        new Set(["node-balcony"]),
-    ),
+    resolvePortalTeleport({ ...base, toNodeId: "node-balcony" }, schemes),
     {
         scheme: "node-balcony",
-        pose: { px: 1, py: 2, pz: 3, yaw: 4, pitch: 5 },
+        pose: balconyPose,
         skipOpeningTransition: true,
     },
 );
 
+// The destination scene's own pose is used regardless of which portal led
+// there — a scheme's canonical landing spot lives on the scheme, not on any
+// one portal.
+const otherPortal = { ...base, id: "portal-2", name: "back-door", toNodeId: "node-balcony" };
+assert.deepEqual(
+    resolvePortalTeleport(otherPortal, schemes)?.pose,
+    balconyPose,
+);
+
 assert.equal(
-    resolvePortalTeleport(
-        {
-            ...base,
-            toNodeId: "missing",
-            spawn: { x: 1, y: 2, z: 3, yaw: 4 },
-        },
-        new Set(["node-balcony"]),
-    ),
+    resolvePortalTeleport({ ...base, toNodeId: "missing" }, schemes),
     null,
+    "a portal targeting a scheme that isn't loaded never resolves",
 );

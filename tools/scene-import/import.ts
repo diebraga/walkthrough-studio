@@ -1,6 +1,6 @@
 import type { DatabaseClient } from "../../server/db.js";
 import { Prisma } from "@prisma/client";
-import type { JsonValue, SceneImportPlan } from "./discover.js";
+import type { JsonValue, PortalImport, SceneImportPlan } from "./discover.js";
 
 export interface ImportSummary {
   places: number;
@@ -15,6 +15,18 @@ export async function persistSceneImport(
 ): Promise<ImportSummary> {
   validatePortalDestinations(plan);
   const summary = summarize(plan);
+
+  // Legacy portals.json still carries one spawn per portal; a scene's
+  // canonical pose is the first one found among the portals that land there.
+  const nodePoses = new Map<string, PortalImport["spawn"]>();
+  for (const place of plan.places) {
+    for (const node of place.nodes) {
+      for (const portal of node.portals) {
+        const key = nodeKey(place.slug, portal.toNodeSlug);
+        if (!nodePoses.has(key)) nodePoses.set(key, portal.spawn);
+      }
+    }
+  }
 
   await database.$transaction(async (tx) => {
     const nodeIds = new Map<string, string>();
@@ -36,6 +48,10 @@ export async function persistSceneImport(
       });
 
       for (const node of place.nodes) {
+        const pose = nodePoses.get(nodeKey(place.slug, node.slug));
+        const poseFields = pose
+          ? { poseX: pose.x, poseY: pose.y, poseZ: pose.z, poseYaw: pose.yaw, posePitch: pose.pitch }
+          : {};
         const nodeRecord = await tx.sceneNode.upsert({
           where: { placeId_slug: { placeId: placeRecord.id, slug: node.slug } },
           create: {
@@ -44,11 +60,13 @@ export async function persistSceneImport(
             name: node.name,
             collisionData: jsonInput(node.collisionData),
             metadata: jsonInput(node.metadata),
+            ...poseFields,
           },
           update: {
             name: node.name,
             collisionData: jsonInput(node.collisionData),
             metadata: jsonInput(node.metadata),
+            ...poseFields,
           },
         });
         nodeIds.set(nodeKey(place.slug, node.slug), nodeRecord.id);
@@ -117,11 +135,6 @@ export async function persistSceneImport(
             positionZ: portal.position.z,
             yaw: portal.yaw,
             radius: portal.radius,
-            spawnX: portal.spawn.x,
-            spawnY: portal.spawn.y,
-            spawnZ: portal.spawn.z,
-            spawnYaw: portal.spawn.yaw,
-            spawnPitch: portal.spawn.pitch,
             metadata: jsonInput(portal.metadata),
           };
           await tx.portal.upsert({

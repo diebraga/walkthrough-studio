@@ -2,14 +2,13 @@
  * Portals: named points inside a scene, captured while walking it.
  *
  * Linked portals are directional traversable doorways between scans. Runtime
- * authoring creates one direction at a time; `toNodeId` and `spawn` describe
- * the destination.
+ * authoring creates one direction at a time; `toNodeId` names the
+ * destination. Arrival pose is the destination scene's own canonical pose
+ * (see `RuntimeSceneNode.pose`), not something a portal carries.
  *
  * Runtime portals are loaded from Neon through the scene graph API. Legacy
  * portals.json files remain importer inputs rather than runtime authority.
  */
-
-import type { RuntimeScenePose } from './scene-catalog';
 
 export interface Portal {
     /** Persistent database identity when this portal came from Neon. */
@@ -24,8 +23,6 @@ export interface Portal {
     toNodeId?: string | null;
     /** Target scene. Null until scenes are linked. */
     to: string | null;
-    /** Arrival pose in the target scene. Null until scenes are linked. */
-    spawn: { x: number; y: number; z: number; yaw: number; pitch?: number } | null;
 }
 
 export const DEFAULT_RADIUS = 0.8;
@@ -64,7 +61,7 @@ export function createPortal(
     name: string,
     position: { x: number; y: number; z: number },
     yaw: number,
-    destination: { id: string; pose: RuntimeScenePose },
+    toNodeId: string,
     radius = DEFAULT_RADIUS,
 ): Portal {
     return {
@@ -72,15 +69,8 @@ export function createPortal(
         position,
         yaw,
         radius,
-        toNodeId: destination.id,
+        toNodeId,
         to: null,
-        spawn: {
-            x: destination.pose.px,
-            y: destination.pose.py,
-            z: destination.pose.pz,
-            yaw: destination.pose.yaw,
-            pitch: destination.pose.pitch,
-        },
     };
 }
 

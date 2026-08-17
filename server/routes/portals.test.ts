@@ -19,7 +19,6 @@ const createInput: CreatePortalInput = {
   position: { x: 1, y: 2, z: 3 },
   yaw: 0.25,
   radius: 0.8,
-  spawn: { x: 9.14, y: 0.17, z: 3.09, yaw: 0, pitch: 0 },
 };
 
 const portal: PortalRecord = {
@@ -28,7 +27,6 @@ const portal: PortalRecord = {
   position: createInput.position,
   yaw: createInput.yaw,
   radius: createInput.radius,
-  spawn: createInput.spawn,
   toNodeId: BALCONY_ID,
 };
 
@@ -78,6 +76,14 @@ assert.equal(updateResponse.status, 200);
 assert.deepEqual(updateCalls, [{ id: PORTAL_ID, fromNodeId: HALL_ID, radius: 1.25 }]);
 assert.equal((await updateResponse.json()).portal.radius, 1.25);
 
+const invalidUpdateResponse = await enabled.request("/", {
+  method: "PATCH",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ id: PORTAL_ID, fromNodeId: HALL_ID, radius: "bad" }),
+});
+assert.equal(invalidUpdateResponse.status, 400);
+assert.equal(updateCalls.length, 1, "an invalid update never reaches the store");
+
 const deleteResponse = await enabled.request("/", {
   method: "DELETE",
   headers: { "content-type": "application/json" },
@@ -90,7 +96,6 @@ assert.deepEqual(await deleteResponse.json(), { deletedId: PORTAL_ID });
 for (const body of [
   { ...createInput, toNodeId: HALL_ID },
   { ...createInput, radius: Number.NaN },
-  { ...createInput, spawn: { ...createInput.spawn, x: "bad" } },
 ]) {
   const response = await enabled.request("/", {
     method: "POST",

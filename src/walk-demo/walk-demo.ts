@@ -38,12 +38,12 @@ import { PortalActivationGate } from './portal-activation';
 import {
     commitCreatedPortal,
     commitDeletedPortal,
-    commitUpdatedPortal,
     createDatabasePortal,
     deleteDatabasePortal,
+    formatScenePoseStatus,
     portalDestinationOptions,
     PortalMutationQueue,
-    updateDatabasePortalRadius,
+    updateDatabaseScenePose,
 } from './portal-authoring';
 import { PortalRenderer } from './portal-renderer';
 import { activeDevFlags, devEnabled, envDevFlagsActive, readDevToggle, writeDevToggle } from './dev-settings';
@@ -2386,7 +2386,6 @@ class WalkDemoApp {
         showCollision: boolean;
         preset: WalkPresetId;
         fps: string;
-        portalName: string;
         portalDestination: string;
         portalStatus: string;
         insidePortal: string;
@@ -2430,7 +2429,6 @@ class WalkDemoApp {
             // Debug views default OFF and remember their last state, so a reload
             // never drops you into a scene full of debug geometry.
             showCollision: readDevToggle('showCollision'),
-            portalName: '',
             portalDestination: '',
             portalStatus: '-',
             insidePortal: '-',
@@ -2566,7 +2564,6 @@ class WalkDemoApp {
         if (!Object.values(destinations).includes(this.params.portalDestination)) {
             this.params.portalDestination = Object.values(destinations)[0] ?? '';
         }
-        folder.addBinding(this.params, 'portalName', { label: 'Name' });
         folder.addBinding(this.params, 'portalDestination', {
             label: 'Destination',
             options: destinations,
@@ -2595,27 +2592,15 @@ class WalkDemoApp {
         }
         const state = walk.getCharacterState();
         const sourceNodeId = this.params.scheme;
-        const name = this.params.portalName.trim() || nextPortalName(this.portals);
-        if (this.portals.some((p) => p.name === name)) {
-            this.params.portalStatus = `name '${name}' already used`;
-            return;
-        }
+        const name = nextPortalName(this.portals);
         // Place ahead of the player, not underfoot, so creating the portal
         // can't immediately trigger it (see offsetForward).
         const position = offsetForward(state.position, state.yaw, DEFAULT_RADIUS + 1);
-        // Arrive at the destination's walkable center rather than its fixed
-        // authored pose: two portals both landing near a scene's one default
-        // point is what turns a hall<->balcony pair into a teleport loop.
-        const center = destination.collisionData
-            ? new GridCollision(destination.collisionData).walkableCenter()
-            : null;
-        const arrivalPose = center && destination.collisionData
-            ? { ...destination.pose, px: center.x, py: destination.collisionData.floorY, pz: center.z }
-            : destination.pose;
-        const draft = createPortal(name, position, state.yaw, { id: destination.id, pose: arrivalPose });
+        // Arrival pose is the destination scene's own canonical pose (see
+        // "Set respawn here" per scene below), not something a portal carries.
+        const draft = createPortal(name, position, state.yaw, destination.id);
         try {
             const created = await createDatabasePortal({ fromNodeId: sourceNodeId, portal: draft });
-            if (this.params.scheme === sourceNodeId) this.params.portalName = '';
             this.showConfirmedPortals(commitCreatedPortal(
                 this.schemes,
                 sourceNodeId,
@@ -2641,62 +2626,73 @@ class WalkDemoApp {
         for (const row of this.portalRows.splice(0)) {
             row.dispose();
         }
-        for (const portal of this.portals) {
-            // Collapsed by default: deleting takes expand-then-click, so a stray
-            // click on the list cannot remove the wrong portal.
-            const row = folder.addFolder({ title: portal.name, expanded: false });
-            const at = {
-                x: +portal.position.x.toFixed(2),
-                y: +portal.position.y.toFixed(2),
-                z: +portal.position.z.toFixed(2),
-            };
-            row.addBinding(at, 'x', { readonly: true });
-            row.addBinding(at, 'y', { readonly: true });
-            row.addBinding(at, 'z', { readonly: true });
-            const confirmedRadius = portal.radius;
-            const radiusBinding = row.addBinding(portal, 'radius', { min: 0.3, max: 3, step: 0.1 });
-            radiusBinding.on('change', (event) => {
-                if (!event.last) return;
-                portal.radius = confirmedRadius;
-                radiusBinding.refresh();
-                const sourceNodeId = this.params.scheme;
-                void this.portalMutationQueue.enqueue(portal.id ?? portal.name, () =>
-                    this.persistPortalRadius(portal, event.value, sourceNodeId));
+        // One toggle per scene, listing that scene's own portals — spans every
+        // database scheme, not just the one currently loaded, since this.schemes
+        // (unlike this.portals) stays up to date for all of them.
+        const schemes = Object.values(this.schemes)
+            .filter((scheme): scheme is typeof scheme & { source: 'database' } => scheme.source === 'database')
+            .sort((a, b) => a.name.localeCompare(b.name));
+        for (const scheme of schemes) {
+            const portals = scheme.portals ?? [];
+            const sceneFolder = folder.addFolder({ title: `${scheme.name} (${portals.length})`, expanded: false });
+            // One canonical landing spot per scene, used regardless of which
+            // portal (or direct load) brought the walker here — only enable
+            // the button while standing in this scene, where "current
+            // position" means the arrival point.
+            const canSetLanding = this.params.scheme === scheme.id;
+            sceneFolder.addButton({ title: 'Set respawn here', disabled: !canSetLanding }).on('click', () => {
+                void this.updateScenePose(scheme);
             });
-            row.addButton({ title: 'Delete' }).on('click', () => {
-                void this.deletePortal(portal, this.params.scheme);
-            });
-            this.portalRows.push(row);
+            for (const portal of portals) {
+                // Collapsed by default: deleting takes expand-then-click, so a
+                // stray click on the list cannot remove the wrong portal.
+                const row = sceneFolder.addFolder({ title: portal.name, expanded: false });
+                row.addButton({ title: 'Delete' }).on('click', () => {
+                    void this.deletePortal(portal, scheme.id);
+                });
+            }
+            this.portalRows.push(sceneFolder);
         }
     }
 
     private showConfirmedPortals(activePortals: Portal[] | null): void {
-        if (!activePortals) return;
-        this.portals = activePortals;
+        // Only the currently loaded scheme's live trigger list (this.portals)
+        // needs updating; the authoring list below spans every scheme and
+        // reads straight from this.schemes, so it always needs a rebuild.
+        if (activePortals) this.portals = activePortals;
         this.rebuildPortalList();
     }
 
-    private async persistPortalRadius(
-        portal: Portal,
-        radius: number,
-        sourceNodeId: string,
-    ): Promise<void> {
-        if (!portal.id) {
-            this.params.portalStatus = 'save failed: portal has no database id';
+    /** Set this scene's canonical landing pose to where the walker is standing. */
+    private async updateScenePose(scheme: WalkDemoScheme): Promise<void> {
+        const walk = this.walk;
+        if (!walk) {
+            this.params.portalStatus = `save failed ${scheme.name}: walker not ready`;
             return;
         }
+        if (this.params.scheme !== scheme.id) {
+            this.params.portalStatus = `save failed ${scheme.name}: open this scene first`;
+            return;
+        }
+        const pose = walk.getPose();
+        this.params.portalStatus = `saving ${scheme.name}...`;
+        void this.portalMutationQueue.enqueue(scheme.id, () => this.persistScenePose(scheme, pose));
+    }
+
+    private async persistScenePose(
+        scheme: WalkDemoScheme,
+        pose: { x: number; y: number; z: number; yaw: number; pitch: number },
+    ): Promise<void> {
         try {
-            const updated = await updateDatabasePortalRadius({ id: portal.id, fromNodeId: sourceNodeId, radius });
-            this.showConfirmedPortals(commitUpdatedPortal(
-                this.schemes,
-                sourceNodeId,
-                this.params.scheme,
-                updated,
-            ));
-            this.markPortalSaved(sourceNodeId);
+            const confirmed = await updateDatabaseScenePose({ id: scheme.id, pose });
+            const target = this.schemes[scheme.id];
+            if (target) {
+                target.pose = { ...target.pose, px: confirmed.x, py: confirmed.y, pz: confirmed.z, yaw: confirmed.yaw, pitch: confirmed.pitch };
+            }
+            this.params.portalStatus = formatScenePoseStatus(scheme.name, confirmed);
         } catch (error) {
-            this.markPortalError(sourceNodeId, 'save', error);
-            if (this.params.scheme === sourceNodeId) this.rebuildPortalList();
+            const message = String((error as Error)?.message ?? error);
+            this.params.portalStatus = `save failed ${scheme.name}: ${message}`;
         }
     }
 
@@ -2766,7 +2762,7 @@ class WalkDemoApp {
         if (this.teleporting) {
             return;
         }
-        const target = resolvePortalTeleport(portal, new Set(Object.keys(this.schemes)));
+        const target = resolvePortalTeleport(portal, this.schemes);
         if (!target) {
             return;
         }

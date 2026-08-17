@@ -14,19 +14,17 @@ export interface PortalTeleport<T extends string = string> {
     skipOpeningTransition: true;
 }
 
-export function resolvePortalTeleport<T extends string>(portal: Portal, schemes: ReadonlySet<T>): PortalTeleport<T> | null {
-    if (!portal.toNodeId || !portal.spawn || !schemes.has(portal.toNodeId as T)) {
+export function resolvePortalTeleport<T extends string>(
+    portal: Portal,
+    schemes: Readonly<Record<T, { pose: TeleportPose }>>,
+): PortalTeleport<T> | null {
+    const destination = portal.toNodeId as T | undefined;
+    if (!destination || !(destination in schemes)) {
         return null;
     }
     return {
-        scheme: portal.toNodeId as T,
-        pose: {
-            px: portal.spawn.x,
-            py: portal.spawn.y,
-            pz: portal.spawn.z,
-            yaw: portal.spawn.yaw,
-            pitch: portal.spawn.pitch ?? 0,
-        },
+        scheme: destination,
+        pose: schemes[destination].pose,
         skipOpeningTransition: true,
     };
 }

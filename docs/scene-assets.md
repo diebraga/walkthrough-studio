@@ -121,8 +121,8 @@ public-origin policy.
 Upload the current Nashville assets under their stable runtime keys with:
 
 ```bash
-npx wrangler r2 object put walkthrough-studio-assets/23_nashville_dr_tenessee/hall/index.ply --file public/23_nashville_dr_tenessee/hall/index.ply --content-type application/octet-stream --remote
-npx wrangler r2 object put walkthrough-studio-assets/23_nashville_dr_tenessee/balcony/index.spz --file public/23_nashville_dr_tenessee/balcony/index.spz --content-type application/octet-stream --remote
+npx wrangler r2 object put walkthrough-studio-assets/23_nashville_dr_tenessee/hall/index.ply --file public/23_nashville_dr_tenessee/hall/index.ply --content-type application/octet-stream --cache-control 'public, max-age=31536000, immutable' --remote
+npx wrangler r2 object put walkthrough-studio-assets/23_nashville_dr_tenessee/balcony/index.spz --file public/23_nashville_dr_tenessee/balcony/index.spz --content-type application/octet-stream --cache-control 'public, max-age=31536000, immutable' --remote
 ```
 
 Public delivery must be enabled before the database or deployment points at
@@ -131,3 +131,10 @@ these objects. The temporary public origin is
 `VITE_SPLAT_BASE_URL` until a project custom hostname replaces it. Verify both
 object URLs and their production-origin CORS preflights before changing runtime
 metadata. Never commit Cloudflare credentials or account identifiers.
+
+Splat objects are immutable runtime artifacts: publish replacements under a new
+object key (or versioned prefix) and then update `SceneAsset.objectKey`. The
+upload commands above set a one-year immutable browser/CDN cache. Scene graph
+metadata is cached separately by `/api/scenes` for 30 seconds with
+stale-while-revalidate, so portal and respawn edits do not require a full asset
+cache purge.

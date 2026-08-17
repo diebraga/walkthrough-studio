@@ -31,6 +31,14 @@ model SceneNode {
   name            String
   collisionData   Json?
   metadata        Json?
+  // Canonical arrival point for this scene, used regardless of which portal
+  // (or direct load) brought the walker here. Runtime-authored; see
+  // "Set respawn here" in the portal panel.
+  poseX           Float        @default(0)
+  poseY           Float        @default(-0.4)
+  poseZ           Float        @default(0)
+  poseYaw         Float        @default(0)
+  posePitch       Float        @default(0)
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
   place           Place        @relation(fields: [placeId], references: [id], onDelete: Cascade)
@@ -70,11 +78,6 @@ model Portal {
   positionZ  Float
   yaw        Float
   radius     Float
-  spawnX     Float
-  spawnY     Float
-  spawnZ     Float
-  spawnYaw   Float
-  spawnPitch Float
   metadata   Json?
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt

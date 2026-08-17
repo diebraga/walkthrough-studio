@@ -57,7 +57,7 @@ function samplePlan(destination = "balcony"): SceneImportPlan {
 
 function fakeDatabase() {
   const places = new Map<string, { id: string }>();
-  const nodes = new Map<string, { id: string }>();
+  const nodes = new Map<string, { id: string; data?: Record<string, unknown> }>();
   const assets = new Map<string, { id: string }>();
   const portals = new Map<string, {
     id: string;
@@ -77,9 +77,10 @@ function fakeDatabase() {
       },
     },
     sceneNode: {
-      upsert: async ({ where }: { where: { placeId_slug: { placeId: string; slug: string } } }) => {
+      upsert: async ({ where, create }: { where: { placeId_slug: { placeId: string; slug: string } }; create: Record<string, unknown> }) => {
         const key = `${where.placeId_slug.placeId}:${where.placeId_slug.slug}`;
         if (!nodes.has(key)) nodes.set(key, { id: `node-${where.placeId_slug.placeId}-${where.placeId_slug.slug}` });
+        nodes.get(key)!.data = create;
         return nodes.get(key)!;
       },
     },
@@ -151,7 +152,12 @@ test("upserts the graph idempotently and resolves portal node IDs", async () => 
   assert.match(String(portal.toNodeId), /^node-/);
   assert.notEqual(portal.fromNodeId, portal.toNodeId);
   assert.equal(portal.positionX, 1);
-  assert.equal(portal.spawnPitch, 9);
+  assert.equal("spawnPitch" in portal, false, "portals no longer carry a spawn override");
+
+  // The destination node's canonical pose is derived from the one portal
+  // that lands there, since legacy portals.json still carries a spawn.
+  const balconyNode = [...fake.nodes.entries()].find(([key]) => key.endsWith(":balcony"))![1];
+  assert.equal(balconyNode.data?.posePitch, 9);
 });
 
 test("rejects unresolved portal destinations before opening a transaction", async () => {

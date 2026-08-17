@@ -1,14 +1,6 @@
 import { Hono, type Context } from "hono";
 import { getDb } from "../db.js";
 
-export interface PortalPose {
-  x: number;
-  y: number;
-  z: number;
-  yaw: number;
-  pitch: number;
-}
-
 export interface CreatePortalInput {
   fromNodeId: string;
   toNodeId: string;
@@ -16,7 +8,6 @@ export interface CreatePortalInput {
   position: { x: number; y: number; z: number };
   yaw: number;
   radius: number;
-  spawn: PortalPose;
 }
 
 export interface UpdatePortalRadiusInput {
@@ -31,7 +22,6 @@ export interface PortalRecord {
   position: { x: number; y: number; z: number };
   yaw: number;
   radius: number;
-  spawn: PortalPose;
   toNodeId: string;
 }
 
@@ -76,15 +66,6 @@ function parsePoint(value: unknown, field: string): { x: number; y: number; z: n
   };
 }
 
-function parsePose(value: unknown): PortalPose {
-  if (!isRecord(value)) throw new PortalRequestError("spawn must be an object", 400);
-  return {
-    ...parsePoint(value, "spawn"),
-    yaw: requiredNumber(value.yaw, "spawn.yaw"),
-    pitch: requiredNumber(value.pitch, "spawn.pitch"),
-  };
-}
-
 function parseCreate(value: unknown): CreatePortalInput {
   if (!isRecord(value)) throw new PortalRequestError("request body must be an object", 400);
   const fromNodeId = requiredUuid(value.fromNodeId, "fromNodeId");
@@ -102,7 +83,6 @@ function parseCreate(value: unknown): CreatePortalInput {
     position: parsePoint(value.position, "position"),
     yaw: requiredNumber(value.yaw, "yaw"),
     radius,
-    spawn: parsePose(value.spawn),
   };
 }
 
@@ -141,11 +121,6 @@ function serializePortal(portal: {
   positionZ: number;
   yaw: number;
   radius: number;
-  spawnX: number;
-  spawnY: number;
-  spawnZ: number;
-  spawnYaw: number;
-  spawnPitch: number;
   toNodeId: string;
 }): PortalRecord {
   return {
@@ -154,13 +129,6 @@ function serializePortal(portal: {
     position: { x: portal.positionX, y: portal.positionY, z: portal.positionZ },
     yaw: portal.yaw,
     radius: portal.radius,
-    spawn: {
-      x: portal.spawnX,
-      y: portal.spawnY,
-      z: portal.spawnZ,
-      yaw: portal.spawnYaw,
-      pitch: portal.spawnPitch,
-    },
     toNodeId: portal.toNodeId,
   };
 }
@@ -194,11 +162,6 @@ export const databasePortalMutationStore: PortalMutationStore = {
           positionZ: input.position.z,
           yaw: input.yaw,
           radius: input.radius,
-          spawnX: input.spawn.x,
-          spawnY: input.spawn.y,
-          spawnZ: input.spawn.z,
-          spawnYaw: input.spawn.yaw,
-          spawnPitch: input.spawn.pitch,
         },
       });
       return serializePortal(portal);

@@ -17,11 +17,18 @@ interface ScenePortalDto {
     position: { x: number; y: number; z: number };
     yaw: number;
     radius: number;
-    spawn: { x: number; y: number; z: number; yaw: number; pitch: number };
     metadata: unknown;
     toNodeId: string;
     toNodeSlug: string;
     toNodeName: string;
+}
+
+interface ScenePoseDto {
+    x: number;
+    y: number;
+    z: number;
+    yaw: number;
+    pitch: number;
 }
 
 interface SceneNodeDto {
@@ -30,6 +37,7 @@ interface SceneNodeDto {
     name: string;
     collisionData: unknown;
     metadata: unknown;
+    pose: ScenePoseDto;
     assets: SceneAssetDto[];
     portals: ScenePortalDto[];
 }
@@ -63,7 +71,6 @@ export interface RuntimeScenePortal {
     yaw: number;
     radius: number;
     toNodeId: string;
-    spawn: { x: number; y: number; z: number; yaw: number; pitch: number };
 }
 
 export interface RuntimeSceneNode {
@@ -86,26 +93,9 @@ export interface SceneCatalog {
     nodeBySlug: Map<string, RuntimeSceneNode>;
 }
 
-const DEFAULT_POSE: RuntimeScenePose = {
-    px: 0,
-    py: -0.4,
-    pz: 0,
-    yaw: 0,
-    pitch: 0,
-    thirdPersonDistance: 3.4,
-};
-
-const NODE_POSES: Record<string, RuntimeScenePose> = {
-    hall: DEFAULT_POSE,
-    balcony: {
-        px: 9.14,
-        py: 0.17,
-        pz: 3.09,
-        yaw: 0,
-        pitch: 0,
-        thirdPersonDistance: 3.4,
-    },
-};
+// Cosmetic default for the third-person camera; not part of the authored
+// pose (which only covers where the walker lands, not the camera rig).
+const DEFAULT_THIRD_PERSON_DISTANCE = 3.4;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -189,7 +179,6 @@ export function adaptSceneCatalog(
                 yaw: portal.yaw,
                 radius: portal.radius,
                 toNodeId: portal.toNodeId,
-                spawn: portal.spawn,
             };
         });
         return {
@@ -201,7 +190,14 @@ export function adaptSceneCatalog(
             manualCollision: manualCollisionFrom(node.assets.find((asset) => asset.type === "MANUAL_COLLISION")),
             portals,
             assetBase: assetBase(splat.originalPath),
-            pose: NODE_POSES[node.slug] ?? DEFAULT_POSE,
+            pose: {
+                px: node.pose.x,
+                py: node.pose.y,
+                pz: node.pose.z,
+                yaw: node.pose.yaw,
+                pitch: node.pose.pitch,
+                thirdPersonDistance: DEFAULT_THIRD_PERSON_DISTANCE,
+            },
         };
     });
     const nodeById = new Map(nodes.map((node) => [node.id, node]));

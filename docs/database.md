@@ -22,7 +22,8 @@ Place
   slug.
 - A SceneNode is one walkable Gaussian-splat section. Its parsed
   `collision.json` is stored as native Postgres JSONB, not as an escaped JSON
-  string.
+  string. It also carries one canonical arrival pose (`poseX/Y/Z/Yaw/Pitch`),
+  used regardless of which portal — or direct load — brought the walker there.
 - A SceneAsset stores an external reference, MIME type, byte size, and optional
   metadata. Large `index.ply` splats are never stored as database blobs.
 - A Portal is directional. Both endpoints are immutable SceneNode UUID foreign
@@ -87,12 +88,13 @@ developer creates the return direction separately from the destination scene.
 
 The developer portal panel reads destinations from the current place graph and
 excludes the active scene. A new portal uses the walker's current position and
-yaw for its trigger and copies the selected destination's presentation pose for
-arrival. Create, radius update, and delete operations go through Hono and
-Prisma; they do not rewrite `public/**/portals.json`.
+yaw for its trigger and links to the chosen destination; arrival uses whatever
+pose that destination scene already has. Portal create/delete go through
+`/api/portals`; a scene's own pose is re-captured separately, from within that
+scene, through `/api/scenes`. Neither rewrites `public/**/portals.json`.
 
-Set `PORTAL_AUTHORING_ENABLED=1` only in a developer server environment. The
-mutation route defaults off, while graph reads and portal traversal remain
+Set `PORTAL_AUTHORING_ENABLED=1` only in a developer server environment. Both
+mutation routes default off, while graph reads and portal traversal remain
 available normally.
 
 ## Commands

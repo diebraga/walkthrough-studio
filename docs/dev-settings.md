@@ -75,9 +75,10 @@ are holes in the collision.
 ## `portals`
 
 Portal landmarks are always shown to visitors. Each is a static blue/cyan
-additive floor circle; the landmark turns yellow while the walker is inside it.
-The `portals` flag adds a **Portals** folder for
-developer-only authoring controls while walking the scene.
+additive floor circle with a bipolar jet through its center, rendered on top
+of Gaussian splats so it stays visible everywhere. The `portals` flag adds a
+**Portals** folder for developer-only authoring controls while walking the
+scene.
 
 Database writes have a second, server-side guard. Add this to `.env.local` when
 authoring:
@@ -89,40 +90,53 @@ PORTAL_AUTHORING_ENABLED=1
 Without it the controls may be visible, but mutation requests return `404` and
 Neon is unchanged.
 
+The list is grouped into one collapsible folder per database scene, each
+showing that scene's own portals — spanning every scene in the place, not
+just the one currently loaded.
+
 | Control | Does |
 |---|---|
-| Name | Name for the next capture; blank auto-increments `portal_1`, `portal_2` |
 | Destination | Another database scene in this place; the active scene is excluded |
-| Add portal here | Captures the walker position/yaw and links to Destination |
+| Add portal here | Captures the walker position/yaw and links to Destination; name auto-increments `portal_1`, `portal_2` |
 | saved | Time of the last successful write, or the error |
 | inside | Portal you are currently standing in |
-| *(per portal)* | Read-only x/y/z, a radius slider, and Delete |
+| *(per scene)* | **Set respawn here** |
+| *(per portal)* | Delete |
 
-The arrival is the destination's normal Scene-selector pose. Creation is
-one-way: Hall to Balcony never creates Balcony to Hall. Switch to Balcony and
-author the Hall direction there when a return portal is wanted.
+Each scene has one canonical arrival pose (`SceneNode.pose` in Neon), used no
+matter which portal — or direct scene-picker jump — brought the walker there.
+**Set respawn here** sets it to wherever you're currently standing, so it's
+only enabled while the loaded scene is the one whose pose you're editing.
+
+The `saved` field shows `saving <scene>...` while Neon is being updated. It
+changes to the confirmed `(x, y, z)` coordinates only after the server
+returns the updated scene. If the write fails, the field keeps the error
+visible and the last confirmed pose remains in use.
+
+Creating a portal only links the trigger and destination; arrival pose is
+whatever the destination scene's pose already is. Creation is one-way: Hall
+to Balcony never creates Balcony to Hall. Author each direction from the
+scene where its trigger lives.
 
 Linked portals are traversable doorways. Entering and leaving logs `[portal]
 entered <name>` / `[portal] exited <name>`, edge-triggered so it fires once per
 transition rather than every frame.
 
 After a linked portal changes scenes, arrival is deliberately disarmed while
-the walker remains inside any destination portal radius. The destination marker
-still turns yellow, but it cannot immediately send the walker back. Walk fully
-outside every portal radius to rearm activation, then re-enter the return portal
-to travel back.
+the walker remains inside any destination portal radius. Walk fully outside
+every portal radius to rearm activation, then re-enter the return portal to
+travel back.
 
 Rows are **collapsed by default on purpose**: deleting takes expand-then-click,
-so a stray click cannot remove the wrong portal. Position is read-only — if a
-portal is in the wrong place, delete it and walk back, rather than turning the
-panel into a tiny 3D editor.
+so a stray click cannot remove the wrong portal.
 
 ### Saving
 
-Every create, radius change, and deletion is sent to `/api/portals` and written
-to Neon through Prisma. Local markers and traversal state update only after the
-API confirms the write. There is no undo; a deleted database portal must be
-authored again or restored through normal database recovery.
+Portal creates and deletions are sent to `/api/portals`; scene respawn edits
+are sent to `/api/scenes`. Both are written to Neon through Prisma. Local
+markers and traversal state update only after the API confirms the write.
+There is no undo; a deleted database portal must be authored again or
+restored through normal database recovery.
 
 ### Legacy import format
 
@@ -143,10 +157,12 @@ authored again or restored through normal database recovery.
 
 `to` and `spawn` are null until scenes are linked. To author a forward doorway,
 set `to` to the target scene slug and `spawn` to the desired arrival pose in that
-scene. Spawns cannot be derived — each scan has its own arbitrary coordinate
-frame, so where you arrive in the kitchen has no relationship to where the door
-is in the hall. Walk the target scene, use **Copy position** to capture that pose,
-and place it on the forward portal before running `pnpm db:import`.
+scene — the importer applies it as that scene's canonical `SceneNode.pose`
+(first portal targeting it wins). Spawns cannot be derived — each scan has its
+own arbitrary coordinate frame, so where you arrive in the kitchen has no
+relationship to where the door is in the hall. Walk the target scene, use
+**Copy position** to capture that pose, and place it on the forward portal
+before running `pnpm db:import`.
 
 The importer can still generate reciprocal entries from legacy `portals.json`
 inputs. Runtime API authoring does not run importer completion; author each

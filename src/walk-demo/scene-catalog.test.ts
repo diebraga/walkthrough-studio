@@ -28,6 +28,7 @@ const fixture = {
         name: "Balcony",
         collisionData: { ...collision, floorY: -1.23 },
         metadata: null,
+        pose: { x: 9.14, y: 0.17, z: 3.09, yaw: 0, pitch: 0 },
         assets: [
           {
             id: "asset-balcony",
@@ -56,6 +57,7 @@ const fixture = {
         name: "Hall",
         collisionData: collision,
         metadata: null,
+        pose: { x: 0, y: -0.4, z: 0, yaw: 0, pitch: 0 },
         assets: [{
           id: "asset-hall",
           type: "GAUSSIAN_SPLAT",
@@ -71,7 +73,6 @@ const fixture = {
           position: { x: 5.460187628181378, y: -1.6575586062801138, z: 1.2482137278601433 },
           yaw: -3.112796326794897,
           radius: 0.8,
-          spawn: { x: 0.734, y: 0.774, z: -0.297, yaw: -1.462, pitch: 0.154 },
           metadata: null,
           toNodeId: "node-balcony",
           toNodeSlug: "balcony",
@@ -109,7 +110,14 @@ assert.deepEqual(catalog.nodeById.get("node-hall")?.portals[0], {
   yaw: -3.112796326794897,
   radius: 0.8,
   toNodeId: "node-balcony",
-  spawn: { x: 0.734, y: 0.774, z: -0.297, yaw: -1.462, pitch: 0.154 },
+});
+assert.deepEqual(catalog.nodeById.get("node-balcony")?.pose, {
+  px: 9.14,
+  py: 0.17,
+  pz: 3.09,
+  yaw: 0,
+  pitch: 0,
+  thirdPersonDistance: 3.4,
 });
 
 assert.throws(

@@ -130,7 +130,6 @@ const portals = [
         yaw: 0.3,
         radius: 1.1,
         to: null,
-        spawn: null,
     },
     {
         name: 'quartz',
@@ -138,7 +137,6 @@ const portals = [
         yaw: -0.8,
         radius: 0.9,
         to: null,
-        spawn: null,
     },
 ] satisfies Portal[];
 

@@ -55,6 +55,7 @@ try {
           nodes: place.sceneNodes.map((node) => ({
             id: node.id,
             slug: node.slug,
+            pose: [node.poseX, node.poseY, node.poseZ, node.poseYaw, node.posePitch],
             assets: node.assets.map((asset) => ({
               id: asset.id,
               type: asset.type,
@@ -68,13 +69,6 @@ try {
               position: [portal.positionX, portal.positionY, portal.positionZ],
               yaw: portal.yaw,
               radius: portal.radius,
-              spawn: [
-                portal.spawnX,
-                portal.spawnY,
-                portal.spawnZ,
-                portal.spawnYaw,
-                portal.spawnPitch,
-              ],
             })),
           })),
         })),

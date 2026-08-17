@@ -29,7 +29,7 @@ const updateEnd = source.indexOf('private async teleportThroughPortal', updateSt
 const update = source.slice(updateStart, updateEnd);
 const presentationIndex = update.indexOf("this.params.insidePortal = current?.name ?? '-';");
 const activationIndex = update.indexOf('if (!this.teleporting) {');
-const rendererIndex = update.indexOf('this.portalRenderer?.update(this.portals, this.insidePortalName, floorY);');
+const rendererIndex = update.indexOf('this.portalRenderer?.update(this.portals, floorY);');
 assert.notEqual(presentationIndex, -1);
 assert.notEqual(activationIndex, -1);
 assert.notEqual(rendererIndex, -1);
@@ -74,12 +74,18 @@ assert.ok(source.includes("folder.addBinding(this.params, 'portalDestination'"))
 assert.ok(source.includes("this.params.portalStatus = 'choose a destination';"));
 assert.ok(source.includes('const created = await createDatabasePortal({ fromNodeId: sourceNodeId, portal: draft });'));
 assert.ok(source.includes('this.showConfirmedPortals(commitCreatedPortal('));
-assert.ok(source.includes('this.showConfirmedPortals(commitUpdatedPortal('));
 assert.ok(source.includes('this.showConfirmedPortals(commitDeletedPortal('));
-assert.ok(source.includes('if (!event.last) return;'));
-assert.ok(source.includes("this.portalMutationQueue.enqueue(portal.id ?? portal.name"));
+assert.ok(source.includes("this.portalMutationQueue.enqueue(scheme.id, () => this.persistScenePose(scheme, pose));"));
+assert.match(source, /this\.params\.portalStatus = `saving \$\{scheme\.name\}\.\.\.`/);
+assert.match(source, /formatScenePoseStatus\(scheme\.name, confirmed\)/);
+assert.match(source, /save failed \$\{scheme\.name\}/);
 assert.ok(source.includes('await deleteDatabasePortal({ id: portal.id, fromNodeId: sourceNodeId });'));
 assert.ok(source.includes('this.markPortalSaved(sourceNodeId);'));
 assert.ok(source.includes('if (this.params.scheme !== sourceNodeId) return;'));
 assert.ok(!source.includes('savePortals'));
 assert.ok(!source.includes('/__dev/portals'));
+
+const collisionLoadIndex = reload.indexOf('await this.tryLoadCollision');
+const explicitPoseIndex = reload.indexOf("walk.startAtPose(new Vector3(p.px, p.py, p.pz), p.yaw, p.pitch, { snapToGround: false });");
+assert.ok(collisionLoadIndex >= 0 && explicitPoseIndex > collisionLoadIndex, 'portal pose is applied after collision setup');
+assert.match(reload, /if \(!options\.pose\) \{\s+walk\.startAtPose\(new Vector3\(p\.px, p\.py, p\.pz\), p\.yaw, p\.pitch\);\s+\}/);

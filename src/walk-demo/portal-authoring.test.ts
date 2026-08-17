@@ -5,9 +5,11 @@ import {
     commitUpdatedPortal,
     createDatabasePortal,
     deleteDatabasePortal,
+    formatScenePoseStatus,
     portalDestinationOptions,
     PortalMutationQueue,
     updateDatabasePortalRadius,
+    updateDatabaseScenePose,
 } from './portal-authoring';
 import { createPortal } from './portals';
 import type { WalkDemoScheme } from './runtime-scenes';
@@ -33,7 +35,7 @@ const draft = createPortal(
     'balcony-door',
     { x: 1, y: 2, z: 3 },
     0.25,
-    schemes['balcony-id']!,
+    'balcony-id',
 );
 assert.deepEqual(draft, {
     name: 'balcony-door',
@@ -42,7 +44,6 @@ assert.deepEqual(draft, {
     radius: 0.8,
     toNodeId: 'balcony-id',
     to: null,
-    spawn: { x: 9.14, y: 0.17, z: 3.09, yaw: 0, pitch: 0 },
 });
 
 interface RecordedRequest {
@@ -57,7 +58,8 @@ const fetcher: typeof fetch = async (input, init) => {
         return Response.json({ deletedId: 'portal-id' });
     }
     if (init?.method === 'PATCH') {
-        return Response.json({ portal: { ...returnedPortal, radius: 1.2 } });
+        const body = JSON.parse(init.body as string);
+        return Response.json({ portal: { ...returnedPortal, radius: body.radius } });
     }
     return Response.json({ portal: returnedPortal }, { status: 201 });
 };
@@ -72,7 +74,6 @@ assert.deepEqual(JSON.parse(requests[0]?.init?.body as string), {
     position: { x: 1, y: 2, z: 3 },
     yaw: 0.25,
     radius: 0.8,
-    spawn: { x: 9.14, y: 0.17, z: 3.09, yaw: 0, pitch: 0 },
 });
 
 const updated = await updateDatabasePortalRadius(
@@ -88,6 +89,28 @@ assert.equal(requests[2]?.init?.method, 'DELETE');
 const failingFetcher: typeof fetch = async () => Response.json({ error: 'authoring disabled' }, { status: 404 });
 await assert.rejects(
     createDatabasePortal({ fromNodeId: 'hall-id', portal: draft }, failingFetcher),
+    /authoring disabled/,
+);
+
+// --- Scene pose (canonical arrival point, saved per scene not per portal) ---
+
+const poseRequests: RecordedRequest[] = [];
+const newPose = { x: 5, y: 0, z: -2, yaw: 0.4, pitch: 0.1 };
+const poseFetcher: typeof fetch = async (input, init) => {
+    poseRequests.push({ input, init });
+    const body = JSON.parse(init?.body as string);
+    return Response.json({ node: { id: body.id, pose: body.pose } });
+};
+const confirmedPose = await updateDatabaseScenePose({ id: 'hall-id', pose: newPose }, poseFetcher);
+assert.equal(poseRequests[0]?.input, '/api/scenes');
+assert.equal(poseRequests[0]?.init?.method, 'PATCH');
+assert.deepEqual(confirmedPose, newPose, 'the confirmed server pose is returned to the caller');
+assert.equal(
+    formatScenePoseStatus('Hall', newPose),
+    'saved Hall spawn → (5.00, 0.00, -2.00)',
+);
+await assert.rejects(
+    updateDatabaseScenePose({ id: 'hall-id', pose: newPose }, failingFetcher),
     /authoring disabled/,
 );
 
@@ -124,17 +147,17 @@ assert.deepEqual(
 const queue = new PortalMutationQueue();
 const starts: string[] = [];
 let releaseFirst!: () => void;
-const firstWrite = queue.enqueue('portal-1', async () => {
+const firstWrite = queue.enqueue('hall-id', async () => {
     starts.push('first');
     await new Promise<void>((resolve) => {
         releaseFirst = resolve;
     });
 });
-const secondWrite = queue.enqueue('portal-1', async () => {
+const secondWrite = queue.enqueue('hall-id', async () => {
     starts.push('second');
 });
 await new Promise<void>((resolve) => setImmediate(resolve));
-assert.deepEqual(starts, ['first'], 'a second write for one portal waits for the first response');
+assert.deepEqual(starts, ['first'], 'a second write for one scene waits for the first response');
 releaseFirst();
 await Promise.all([firstWrite, secondWrite]);
-assert.deepEqual(starts, ['first', 'second'], 'same-portal writes execute in request order');
+assert.deepEqual(starts, ['first', 'second'], 'same-scene writes execute in request order');

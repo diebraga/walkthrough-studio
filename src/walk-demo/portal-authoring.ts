@@ -105,8 +105,8 @@ export async function createDatabasePortal(
     fetcher: typeof fetch = fetch,
 ): Promise<Portal> {
     const portal = input.portal;
-    if (!portal.toNodeId || !portal.spawn) {
-        throw new Error('Portal destination and spawn are required');
+    if (!portal.toNodeId) {
+        throw new Error('Portal destination is required');
     }
     const data = await portalRequest('POST', {
         fromNodeId: input.fromNodeId,
@@ -115,7 +115,6 @@ export async function createDatabasePortal(
         position: portal.position,
         yaw: portal.yaw,
         radius: portal.radius,
-        spawn: portal.spawn,
     }, fetcher);
     if (!data.portal) throw new Error('Portal API response is missing portal');
     return { ...data.portal, to: null };
@@ -128,6 +127,40 @@ export async function updateDatabasePortalRadius(
     const data = await portalRequest('PATCH', input, fetcher);
     if (!data.portal) throw new Error('Portal API response is missing portal');
     return { ...data.portal, to: null };
+}
+
+export interface ScenePose {
+    x: number;
+    y: number;
+    z: number;
+    yaw: number;
+    pitch: number;
+}
+
+interface ScenePoseResponse {
+    node?: { id: string; pose: ScenePose };
+    error?: string;
+}
+
+export async function updateDatabaseScenePose(
+    input: { id: string; pose: ScenePose },
+    fetcher: typeof fetch = fetch,
+): Promise<ScenePose> {
+    const response = await fetcher('/api/scenes', {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+    });
+    const data = await response.json() as ScenePoseResponse;
+    if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+    if (!data.node) throw new Error('Scene API response is missing node');
+    if (data.node.id !== input.id) throw new Error('Scene API response has the wrong node id');
+    return data.node.pose;
+}
+
+export function formatScenePoseStatus(sceneName: string, pose: ScenePose): string {
+    const point = [pose.x, pose.y, pose.z].map((value) => value.toFixed(2)).join(', ');
+    return `saved ${sceneName} spawn → (${point})`;
 }
 
 export async function deleteDatabasePortal(

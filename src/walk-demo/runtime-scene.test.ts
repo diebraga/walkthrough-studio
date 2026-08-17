@@ -16,7 +16,6 @@ const node: RuntimeSceneNode = {
     yaw: 4,
     radius: 0.8,
     toNodeId: "node-balcony",
-    spawn: { x: 5, y: 6, z: 7, yaw: 8, pitch: 9 },
   }],
   assetBase: "/place/hall/",
   pose: { px: 0, py: -0.4, pz: 0, yaw: 0, pitch: 0 },
@@ -42,6 +41,5 @@ assert.deepEqual(schemes["node-hall"].portals[0], {
   radius: 0.8,
   toNodeId: "node-balcony",
   to: null,
-  spawn: { x: 5, y: 6, z: 7, yaw: 8, pitch: 9 },
 });
 assert.equal("collisionGrid" in schemes["node-hall"], false);
